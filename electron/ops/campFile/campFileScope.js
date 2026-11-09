@@ -138,7 +138,7 @@ export const INTEGER_FIELDS = Object.freeze({
   days_of_operation: ['day_of_week', 'sort_order'],
   tiers: ['sort_order'],
   time_blocks: ['sort_order', 'events_only'],
-  activities: ['is_outdoor', 'is_locked', 'max_groups_per_slot', 'min_per_week', 'max_per_week', 'same_tier_only', 'priority', 'prefer_before_day', 'prefer_before_day_min', 'span_blocks'],
+  activities: ['is_outdoor', 'is_locked', 'max_groups_per_slot', 'min_per_week', 'max_per_week', 'same_tier_only', 'priority', 'prefer_before_day', 'prefer_before_day_min', 'span_blocks', 'rotate_every_weeks'],
   locations: ['capacity', 'sort_order', 'grid_x', 'grid_y'],
   camp_maps: ['image_width', 'image_height'],
   fixed_events: ['is_all_groups', 'span_blocks'],

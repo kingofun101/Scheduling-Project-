@@ -362,6 +362,10 @@ export const PROJECTIONS = {
       // because an entity field absent from PROJECTIONS is written to the document
       // and then silently never materializes in SQLite.
       'catalog_role',
+      // v99: per-division allowed (day, block) cells (JSON text) and the rotate-every-N-weeks
+      // preference. Registered here or they are written to the document and never materialize.
+      'allowed_periods',
+      'rotate_every_weeks',
     ],
     ensureExists: (db, id) => {
       // Same zero-camps caveat as cohorts/groups/days_of_operation/time_blocks/tiers.ensureExists above.

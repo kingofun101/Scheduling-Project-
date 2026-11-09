@@ -119,6 +119,7 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
   const {
     setupLists, setActivities, weeks, setWeeks,
     weekId, weekDeletedBanner, setWeekDeletedBanner, exclusions, replacedDayIds, replacements, specialDaysReadFailed,
+    previousWeekUsage,
     templateData, loading, loadError, templateError, reload,
   } = useScheduleData({
     campId, weekId: preferredWeekId, repo, routes: ROUTES,
@@ -394,7 +395,7 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
     routeState, repo, setActionError,
     recalcStats, resetUndoRedo,
     groups, activities, days, timeBlocks, fixedEvents, events: eventsAll, electiveSets: electiveSetsAll, weekId, replacedDayIds,
-    activityExclusions, groupExclusions, locationExclusions,
+    activityExclusions, groupExclusions, locationExclusions, previousWeekUsage,
   })
 
   // Rainy day…: version first (so the sunny day survives Undo expiring), then the day's switch as one undo entry.
@@ -465,7 +466,7 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
     setConfirmRegen, setSelectedGroup, statsFor: recalcStatsPure,
     groups, tiers, days, timeBlocks, activities, fixedEvents, locations,
     electiveSetActivities, events: eventsAll,
-    weekId, replacedDayIds, specialDaysReadFailed, activityExclusions, groupExclusions, locationExclusions,
+    weekId, replacedDayIds, specialDaysReadFailed, activityExclusions, groupExclusions, locationExclusions, previousWeekUsage,
   })
   // Generation reloads slots wholesale — bump the flag-ack resync so the
   // post-generation diff reads as a reload, never the quiet edit-ack, even when
@@ -594,7 +595,7 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
   function recalcFindings(slotList) {
     // Same route gate as the load loop: findingsContext (useScheduleData).
     setFindings(recalcFindingsPure(slotList, findingsContextPure(route, {
-      groups, activities, days, timeBlocks, replacedDayIds, fixedEvents, weekId, activityExclusions, groupExclusions, locationExclusions,
+      groups, activities, days, timeBlocks, replacedDayIds, fixedEvents, weekId, activityExclusions, groupExclusions, locationExclusions, previousWeekUsage,
     })))
   }
 

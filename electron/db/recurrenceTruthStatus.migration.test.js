@@ -126,6 +126,8 @@ describe('migration v44: fresh vs migrated equivalence', () => {
       // point of this test: the migration ALTER-appends, so the fresh install's
       // declaration must append too or the two diverge in column order.
       'catalog_role',
+      // v99 — appended after catalog_role, in this order, for the same reason.
+      'allowed_periods', 'rotate_every_weeks',
     ])
     db.close()
   })
@@ -173,7 +175,7 @@ describe('migration v44: fresh vs migrated equivalence', () => {
     // property this test actually guards, since a fresh install's declaration
     // has to match what ALTER appends on a migrated one.
     expect(match[0]).toContain('recurrence_truth_status TEXT,')
-    expect(match[0]).toContain('catalog_role TEXT\n);')
+    expect(match[0]).toContain('rotate_every_weeks INTEGER\n);')
   })
 })
 

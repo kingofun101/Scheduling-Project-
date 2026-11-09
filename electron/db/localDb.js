@@ -41,7 +41,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // campers.division_label/is_unattributed and elective_preferences.rank_kind/
 // coordinate_day_label/coordinate_period_label) all land in this file; 79 is the
 // current version.
-export const CURRENT_SCHEMA_VERSION = 98
+export const CURRENT_SCHEMA_VERSION = 99
 
 export function initSchema(db) {
   // template_overlays was retired in v53 (docs/adr/2026-08-30-retire-overlay-
@@ -4458,6 +4458,26 @@ const DEVICE_HEALTH_EVENTS_DDL = `
       db.exec('ALTER TABLE open_reconciliation_decisions ADD COLUMN payload TEXT')
     }
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (98, ?)').run(
+      new Date().toISOString()
+    )
+  }
+
+  // v99 (fork: activity periods + rotation) — two additive, nullable columns on activities:
+  // allowed_periods (JSON text, per-division allowed (day, block) cells) and rotate_every_weeks
+  // (INTEGER, no repeat in consecutive weeks when > 1). Appended LAST in this order (schema.sql
+  // declares them last too). No backfill: NULL on every existing row means "no limits", which is
+  // exactly how every activity behaved before. Guard `>= 98 && < 99`, never a bare `< 99`.
+  if (getSchemaVersion(db) >= 98 && getSchemaVersion(db) < 99) {
+    db.transaction(() => {
+      const cols = db.pragma('table_info(activities)').map((c) => c.name)
+      if (!cols.includes('allowed_periods')) {
+        db.exec('ALTER TABLE activities ADD COLUMN allowed_periods TEXT')
+      }
+      if (!cols.includes('rotate_every_weeks')) {
+        db.exec('ALTER TABLE activities ADD COLUMN rotate_every_weeks INTEGER')
+      }
+    })()
+    db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (99, ?)').run(
       new Date().toISOString()
     )
   }

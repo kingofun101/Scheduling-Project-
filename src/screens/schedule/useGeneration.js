@@ -76,6 +76,7 @@ export function useGeneration({
   activityExclusions,
   groupExclusions,
   locationExclusions,
+  previousWeekUsage,
 }) {
   const {
     slotsByRoute,
@@ -119,7 +120,7 @@ export function useGeneration({
 
     const preplacedSlots = derivePreplacedSlots(slotsByRoute.generated, effActivities)
 
-    const result = buildSchedule({ groups: effGroups, tiers, days, timeBlocks, activities: resolvePriorityForGeneration(effActivities), fixedEvents: effFixedEvents, campId, preplacedSlots, locations, electiveSetActivities, events, weekId, replacedDayIds })
+    const result = buildSchedule({ groups: effGroups, tiers, days, timeBlocks, activities: resolvePriorityForGeneration(effActivities), fixedEvents: effFixedEvents, campId, preplacedSlots, locations, electiveSetActivities, events, weekId, replacedDayIds, previousWeekUsage })
     setGenFindings(result.findings || [])
     setGenDismissed(new Set())
 
@@ -275,7 +276,7 @@ export function useGeneration({
     // The MANUAL route (placeFixedEvents is the manual blank-week bootstrap):
     // findingsContext keeps FIXED_EVENT_DUPLICATE off and the double-booking
     // check (FIXED_EVENT_OVERLAP) on.
-    setManualFindings(recalcFindings(freshSlots, findingsContext('manual', { groups: effGroups, activities: effActivities, days, replacedDayIds, fixedEvents, weekId })))
+    setManualFindings(recalcFindings(freshSlots, findingsContext('manual', { groups: effGroups, activities: effActivities, days, replacedDayIds, fixedEvents, weekId, previousWeekUsage })))
     setManualDismissed(new Set())
     if (groups.length > 0) setSelectedGroup(prev => prev ?? groups[0].id)
     if (unlinkedNames.length > 0) setActionError(unlinkedEventsMessage(unlinkedNames, 'Your blank week is ready, but some events were left out'))

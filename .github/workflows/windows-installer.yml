@@ -1,0 +1,35 @@
+# Builds the Windows installer on a GitHub runner and uploads it as a download, for a camp that
+# cannot install developer tools on its own computers. Run by hand: Actions -> "Windows installer"
+# -> Run workflow -> pick the branch. The result is the "shoresh-windows-installer" artifact.
+#
+# Same build as release-proof.yml's Windows job (Node 22, `npm run electron:build -- --win nsis`),
+# minus the macOS build and the director audit, so it is faster. The installer is UNSIGNED, as v1
+# ships: Windows asks "More info -> Run anyway" the first time.
+name: Windows installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build and verify the packaged app
+        run: npm run electron:build -- --win nsis --publish never
+      - name: Upload the Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: shoresh-windows-installer
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 30

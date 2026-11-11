@@ -228,6 +228,9 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
 
   const [view, setView] = useState('day') // 'group' | 'activity' | 'day'
   const [pickedGroup, setSelectedGroup] = useState(null)
+  // The one cell a clicked problem row points at: lit on the grid, scrolled to,
+  // and cleared after a few seconds (or the next click). { slotId, cellKey, reason }
+  const [locatedCell, setLocatedCell] = useState(null)
   const [pickedDay, setSelectedDay] = useState(null)
   // Group and Daily View always show one: an unset or stale pick falls to the first.
   const selectedGroup = resolveSelection(pickedGroup, groups)
@@ -698,12 +701,14 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
       kind: 'UNFILLABLE',
       severity: FLAG_SEVERITY.UNFILLABLE,
       reason: s.flags?.UNFILLABLE_reason || 'Nothing fits',
+      detail: s.flags?.UNFILLABLE_detail,
       locator: slotLocator(s),
       slotIds: [s.id],
       groupId: s.group_id,
     })),
     ...overlapSlots.map(s => ({
       key: `overlap-${s.id}`,
+      slotIds: [s.id],
       kind: 'OVERLAP',
       severity: FLAG_SEVERITY.OVERLAP,
       reason: s.flags?.OVERLAP_reason || 'Over capacity',
@@ -712,6 +717,7 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
     })),
     ...weekClosedSlots.map(s => ({
       key: `week-closed-${s.id}`,
+      slotIds: [s.id],
       kind: 'WEEK_CLOSED',
       severity: FLAG_SEVERITY.WEEK_CLOSED,
       reason: s.flags?.WEEK_CLOSED_reason || 'Off this week',
@@ -720,6 +726,7 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
     })),
     ...rainPlanFullSlots.map(s => ({
       key: `rain-plan-full-${s.id}`,
+      slotIds: [s.id],
       kind: 'RAIN_PLAN_FULL',
       severity: FLAG_SEVERITY.RAIN_PLAN_FULL,
       reason: RAIN_PLAN_FULL_TEXT,
@@ -755,6 +762,7 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
   const KIND_COLOR = { UNFILLABLE: 'var(--danger)', UNDERSERVED: 'var(--accent)', DISTRIBUTION: 'var(--secondary)', FIXED_EVENT_DUPLICATE: 'var(--accent)', FIXED_EVENT_OVERLAP: 'var(--accent)' }
   const highlightColor = KIND_COLOR[highlightedKind] || 'var(--danger)'
   const highlightMap = highlightMapForKind(highlightedKind, findingsRows, slots)
+  if (locatedCell) highlightMap.set(locatedCell.slotId, locatedCell.reason)
   const railRows = railView && railView !== 'ALL'
     ? findingsRows.filter(r => r.kind === railView)
     : findingsRows
@@ -775,7 +783,23 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
     setView('group')
     setSelectedGroup(row.groupId)
     setRailView(null)
+    // Row about one specific cell (unfillable, overlap, closed week): point at it.
+    const slotId = Array.isArray(row.slotIds) ? row.slotIds[0] : null
+    const slot = slotId != null ? slots.find(x => x.id === slotId) : null
+    setLocatedCell(slot
+      ? { slotId, cellKey: `${slot.group_id}|${slot.day_id}|${slot.time_block_id}`, reason: row.reason }
+      : null)
   }
+
+  useEffect(() => {
+    if (!locatedCell) return undefined
+    const scroll = setTimeout(() => {
+      const el = document.querySelector(`[data-cell-key="${locatedCell.cellKey}"]`)
+      el?.scrollIntoView?.({ block: 'center', inline: 'center', behavior: 'smooth' })
+    }, 60)
+    const clear = setTimeout(() => setLocatedCell(null), 8000)
+    return () => { clearTimeout(scroll); clearTimeout(clear) }
+  }, [locatedCell])
 
   // Register the colour assignment for this camp's activity set before anything
   // renders a dot. T52: colour now encodes how often an activity runs

@@ -34,12 +34,17 @@ export default function FindingsRail({ rows, onDismiss, onLocate, onClose, intro
         rows.map(row => (
           <div key={row.key} style={S.findingsRailRow(SEVERITY_BAR_COLOR[row.severity])}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, color: 'var(--text)', cursor: onLocate && row.groupId != null ? 'pointer' : 'default' }}
+              <div style={{ fontSize: 13, color: 'var(--text)', cursor: onLocate && row.groupId != null ? 'pointer' : 'default', textDecoration: onLocate && row.groupId != null ? 'underline dotted' : 'none' }}
                 onClick={() => row.groupId != null && onLocate?.(row)}
               >
                 {row.reason}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{row.locator}</div>
+              {Array.isArray(row.detail) && row.detail.length > 0 && (
+                <ul style={{ margin: '4px 0 0', padding: '0 0 0 16px', fontSize: 11, color: 'var(--text-secondary)' }}>
+                  {row.detail.map(line => <li key={line}>{line}</li>)}
+                </ul>
+              )}
             </div>
             {/* "Accept" is the Word track-changes verb: I've seen this and I
                 can live with it — hide it. It IS the old dismiss, relabelled so

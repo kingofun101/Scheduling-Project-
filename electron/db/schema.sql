@@ -608,7 +608,17 @@ CREATE TABLE IF NOT EXISTS activities (
   -- appends, so a fresh install's column order stays byte-identical to a
   -- migrated one (column-order trap). Note there is NO inline UNIQUE anywhere
   -- in this table, so no autoindex is created and fresh/migrated cannot diverge.
-  catalog_role TEXT
+  catalog_role TEXT,
+  -- v99: the periods this activity may be placed in, per division (tier). JSON text
+  -- {"<tier_id>": ["<day_id>|<time_block_id>", ...]}. A tier with NO entry is unrestricted
+  -- (same "empty = no limit" reading as eligible_tier_ids); a tier WITH an entry gets only
+  -- those (day, block) cells. The same every week. NULL = no period limits at all.
+  allowed_periods TEXT,
+  -- v99: rotation for very popular activities. N > 1 means a group should not have this
+  -- activity in two consecutive weeks (N = 2: at most one week in two). NULL/0/1 = no rotation.
+  -- A preference the engine honours when it can and reports when it cannot, not a hard cap.
+  -- Both v99 columns must stay LAST, in this order (column-order trap, as above).
+  rotate_every_weeks INTEGER
 );
 -- UNIQUE(camp_id, name) relaxed to a plain index in schema v73 (T241) — see the comment above
 -- `locations`. idx_activities_camp_name (originally added by localDb.js's version-15 migration)

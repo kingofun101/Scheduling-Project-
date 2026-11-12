@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { computeFindings } from '../../engine/buildSchedule'
+import { previousWeekUsage as computePreviousWeekUsage } from '../../engine/rotation'
 import { resolveEffectiveDays, requireReplacedDayIds } from '../../engine/effectiveDays'
 import { normalizeScheduleInputs } from '../../../electron/ops/scheduleInputNormalization'
 import { isRestorable } from '../snapshotRestore'
@@ -74,8 +75,8 @@ export function unfillableSlots(slotList, route) {
 // edit recompute so the two can never disagree.
 export function findingsContext(route, all) {
   return route === 'generated'
-    ? { groups: all.groups, activities: all.activities, days: all.days, timeBlocks: all.timeBlocks, replacedDayIds: all.replacedDayIds, fixedEvents: all.fixedEvents, weekId: all.weekId, activityExclusions: all.activityExclusions, groupExclusions: all.groupExclusions, locationExclusions: all.locationExclusions }
-    : { groups: all.groups, activities: all.activities, days: all.days, replacedDayIds: all.replacedDayIds, overlapFixedEvents: all.fixedEvents, weekId: all.weekId }
+    ? { groups: all.groups, activities: all.activities, days: all.days, timeBlocks: all.timeBlocks, replacedDayIds: all.replacedDayIds, fixedEvents: all.fixedEvents, weekId: all.weekId, activityExclusions: all.activityExclusions, groupExclusions: all.groupExclusions, locationExclusions: all.locationExclusions, previousWeekUsage: all.previousWeekUsage }
+    : { groups: all.groups, activities: all.activities, days: all.days, replacedDayIds: all.replacedDayIds, overlapFixedEvents: all.fixedEvents, weekId: all.weekId, previousWeekUsage: all.previousWeekUsage }
 }
 
 // Pure — no setState. `ctx` is exactly what computeFindings needs beyond the
@@ -88,6 +89,7 @@ export function recalcFindings(slotList, ctx) {
     ...(ctx.fixedEvents !== undefined ? { fixedEvents: ctx.fixedEvents } : {}),
     overlapFixedEvents: ctx.overlapFixedEvents, timeBlocks: ctx.timeBlocks, weekId: ctx.weekId,
     activityExclusions: ctx.activityExclusions, groupExclusions: ctx.groupExclusions, locationExclusions: ctx.locationExclusions,
+    previousWeekUsage: ctx.previousWeekUsage,
   })
 }
 
@@ -133,6 +135,8 @@ export function useScheduleData({ campId, weekId: preferredWeekId, repo, routes,
   const [replacedDayIds, setReplacedDayIds] = useState(NO_REPLACED_DAYS)
   const [specialDaysReadFailed, setSpecialDaysReadFailed] = useState(false)
   const [replacements, setReplacements] = useState(NO_REPLACEMENTS)
+  // Rotation: which (group, activity) pairs the previous week had, so findings and Generate can see a repeat.
+  const [previousWeekUsage, setPreviousWeekUsage] = useState([])
   const [templateData, setTemplateDataState] = useState(EMPTY_TEMPLATE_DATA)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
@@ -231,6 +235,7 @@ export function useScheduleData({ campId, weekId: preferredWeekId, repo, routes,
       return
     }
     let liveWeekId = preferredWeekId
+    let loadedWeeks = []
     try {
       const weekRows = await repo.loadWeeks()
       if (gen !== generationRef.current) return
@@ -245,6 +250,7 @@ export function useScheduleData({ campId, weekId: preferredWeekId, repo, routes,
         // let weekId land on it; it resolves to a real name once sync catches up.
         .filter(w => w.camp_id === campId && String(w.name ?? '').trim() !== '')
         .sort((x, y) => (x.sort_order ?? 0) - (y.sort_order ?? 0) || x.name.localeCompare(y.name))
+      loadedWeeks = campWeeks
       let camp = campWeeks.filter(w => String(w.is_archived) !== '1')
       // Lazy creation, same precedent as ensureTemplateRow: a camp is never
       // shown with zero weeks to choose from. This only fires for a camp that
@@ -334,6 +340,8 @@ export function useScheduleData({ campId, weekId: preferredWeekId, repo, routes,
       const { templates, slots: allSlots, snapshots: snapData } =
         await repo.loadTemplateData()
       if (gen !== generationRef.current) return
+      const usage = computePreviousWeekUsage({ weeks: loadedWeeks, weekId: liveWeekId, templates, slots: allSlots })
+      setPreviousWeekUsage(usage)
 
       const exists = {}
       const nextTids = {}
@@ -404,7 +412,7 @@ export function useScheduleData({ campId, weekId: preferredWeekId, repo, routes,
         // nothing where there is no regenerate); the double-booking check
         // (FIXED_EVENT_OVERLAP) runs on both routes. findingsContext holds the gate.
         nextFindings[r] = recalcFindings(saved, findingsContext(r, {
-          groups: g, activities: a, days: d, timeBlocks: b, replacedDayIds: replaced, fixedEvents: anc, weekId: liveWeekId,
+          groups: g, activities: a, days: d, timeBlocks: b, replacedDayIds: replaced, fixedEvents: anc, weekId: liveWeekId, previousWeekUsage: usage,
           activityExclusions: weekExclusions.activityExclusions,
           groupExclusions: weekExclusions.groupExclusions,
           locationExclusions: weekExclusions.locationExclusions,
@@ -463,6 +471,7 @@ export function useScheduleData({ campId, weekId: preferredWeekId, repo, routes,
     weekDeletedBanner, setWeekDeletedBanner,
     exclusions,
     replacedDayIds, replacements, specialDaysReadFailed,
+    previousWeekUsage,
     templateData,
     loading, loadError, templateError,
     reload: load,

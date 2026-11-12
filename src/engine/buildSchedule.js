@@ -2,6 +2,8 @@ import { assertIdListShape } from './assertIdListShape.js'
 import { resolveFixedEventActivityIds } from './fixedEventActivityLink.js'
 import { resolveFixedEventGroupIds, resolveFixedEventDayIds } from './fixedEventScope.js'
 import { isActivityEligibleForGroup } from './eligibility.js'
+import { parseAllowedPeriods, isPeriodAllowed } from './allowedPeriods.js'
+import { repeatedPairs, pairKey, rotationRepeatFindings } from './rotation.js'
 import { createDayLedger, removeOwnPlaceEntry } from './placementLedger.js'
 import { isFreeChoiceActivity } from './freeChoiceActivities.js'
 import { resolveElectiveOfferingLocations } from './electiveOccupancy.js'
@@ -82,6 +84,7 @@ function normalizeInput(input) {
       events: input.events || [],
       fixedEventsOnly: input.fixedEventsOnly || false,
       weekId: input.weekId ?? null,
+      previousWeekUsage: input.previousWeekUsage || [],
     }
   }
   return {
@@ -103,6 +106,7 @@ function normalizeInput(input) {
     events: input.events || [],
     fixedEventsOnly: input.fixedEventsOnly || false,
     weekId: input.weekId ?? null,
+    previousWeekUsage: input.previousWeekUsage || [],
   }
 }
 
@@ -279,9 +283,11 @@ const UNFILLABLE_TAGS = {
   span: 'No room for full length',
   activity: 'Activity at capacity',
   overlap: 'Group busy at an overlapping time',
+  period: 'Not a period for this activity',
+  rotation: 'Had it last week',
 }
 
-function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, matchSeed, locationCapById, locationNameById, electiveSetActivities, events, fixedEventsOnly = false, weekId = null }) {
+function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, matchSeed, locationCapById, locationNameById, electiveSetActivities, events, fixedEventsOnly = false, weekId = null, previousWeekUsage = [] }) {
   const { cohort, timeBlocks, tiers: _tiers, groups, preplacedSlots, activityTargets, _legacyFixedEvents } = cohortEntry
   const cohortId = cohort?.id ?? null
 
@@ -574,6 +580,12 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
   //     max_groups_per_slot. NOT a min() of the two — different key, different
   //     constraint; the engine checks both.
   const activityUsage = new Map() // "activityId|dayId|blockId" → count
+  // Parsed once per activity: allowed_periods is JSON text and blockedBy() runs in the hot path.
+  // Rotation (v99): pairs that would repeat last week's activity. Strict while placing; relaxed once
+  // at the end so a cell nothing else can fill takes the repeat instead of staying empty.
+  const repeatedLastWeek = repeatedPairs(activities, previousWeekUsage)
+  let rotationStrict = repeatedLastWeek.size > 0
+  const allowedPeriodsByActivity = new Map(activities.map(a => [a.id, parseAllowedPeriods(a.allowed_periods)]))
 
   function getCount(groupId, actId) {
     return usageCount.get(`${groupId}|${actId}`) || 0
@@ -621,6 +633,10 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
     if (placedTodayForGroup(groupId, dayId, act.id)) return 'today'
 
     const group = groupMap.get(groupId)
+    // Per-division allowed periods (v99). Hard: an activity limited to Monday 1st and Thursday 4th
+    // never starts anywhere else for that division.
+    if (!isPeriodAllowed(act, group, dayId, blockId, allowedPeriodsByActivity.get(act.id))) return 'period'
+    if (rotationStrict && repeatedLastWeek.has(pairKey(groupId, act.id))) return 'rotation'
     if (placeBlocked(act, group, dayId, blockId)) return 'place'
 
     const ownBlocks = [blockId]
@@ -1304,6 +1320,13 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
     repair()
     minRepair()
     fillRepair()
+    // Rotation is a preference, not a cap: whatever is still empty may now take a repeat.
+    if (rotationStrict) {
+      rotationStrict = false
+      repair()
+      minRepair()
+      fillRepair()
+    }
   }
 
   // ── Pass 3: audit ─────────────────────────────────────────────────────────
@@ -1332,6 +1355,19 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
         ? [...new Set(os.eligibleActs.map(a => blockedBy(a, os.groupId, os.dayId, os.blockId)))].filter(Boolean)
         : ['none']
       flags.UNFILLABLE_reason = codes.map(c => UNFILLABLE_TAGS[c]).join(' · ')
+      // Per-activity breakdown: which activity was ruled out, and why. Shown under
+      // the short cause so a director can see what each candidate ran into.
+      if (os.eligibleActs.length > 0) {
+        const lines = os.eligibleActs.map(a => {
+          const code = blockedBy(a, os.groupId, os.dayId, os.blockId)
+          return code ? `${a.name || a.id}: ${UNFILLABLE_TAGS[code]}` : null
+        }).filter(Boolean)
+        if (lines.length > 0) {
+          flags.UNFILLABLE_detail = lines.length > 4
+            ? [...lines.slice(0, 4), `${lines.length - 4} more`]
+            : lines
+        }
+      }
       // Slice 4b (§3): if every eligible activity was blocked by a place an
       // overlay (fixed event/elective offering/event) already occupies, name that
       // overlay — otherwise a director sees a newly-blank cell with no way to
@@ -1398,6 +1434,8 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
       findings.push({ kind: 'UNDERSERVED', groupId: u.groupId, activityId: u.activityId, severity: 'caution', reason, got: u.got, needed: u.needed })
     }
 
+    findings.push(...rotationRepeatFindings({ slots: resultSlots, groups, activities, usage: previousWeekUsage }))
+
     for (const group of groups) {
       for (const act of activities) {
         if (act.prefer_before_day == null || act.prefer_before_day_min == null) continue
@@ -1447,7 +1485,7 @@ function eventsOnlySpanFinding(groupId, activityId, activityName, eventName) {
 // any stored rows on them are dropped up front, so every loop below — goals,
 // distribution and the fixed-event audit — sees only the days that run, with
 // or without fixedEvents/weekId (the manual route passes neither).
-export function computeFindings({ slots: allSlots, groups, activities, days: allDays, fixedEvents, overlapFixedEvents, timeBlocks, weekId = null, activityExclusions, groupExclusions, locationExclusions, replacedDayIds }) {
+export function computeFindings({ slots: allSlots, groups, activities, days: allDays, fixedEvents, overlapFixedEvents, timeBlocks, weekId = null, activityExclusions, groupExclusions, locationExclusions, replacedDayIds, previousWeekUsage }) {
   const replaced = new Set(requireReplacedDayIds(replacedDayIds, 'computeFindings'))
   const findings = []
   if (!allSlots || !groups || !activities || !allDays) return findings
@@ -1508,6 +1546,8 @@ export function computeFindings({ slots: allSlots, groups, activities, days: all
     const reason = `Goal: ${u.needed}×/wk — scheduled ${u.got}× (group: ${groupName}, activity: ${actName})`
     findings.push({ kind: 'UNDERSERVED', groupId: u.groupId, activityId: u.activityId, severity: 'caution', reason, got: u.got, needed: u.needed })
   }
+
+  findings.push(...rotationRepeatFindings({ slots, groups, activities, usage: previousWeekUsage }))
 
   for (const group of groups) {
     for (const act of activities) {
@@ -1607,7 +1647,7 @@ export function computeFindings({ slots: allSlots, groups, activities, days: all
 }
 
 function buildSchedule(input) {
-  const { cohorts, days, replacedDays, activities, campId, locations, electiveSetActivities, events, fixedEventsOnly, weekId } = normalizeInput(input)
+  const { cohorts, days, replacedDays, activities, campId, locations, electiveSetActivities, events, fixedEventsOnly, weekId, previousWeekUsage } = normalizeInput(input)
 
   // location_id → capacity (how many GROUPS fit in this place at once). Built
   // once from the camp's locations rows. A stored capacity of 0 or negative
@@ -1658,7 +1698,7 @@ function buildSchedule(input) {
     const cohortEntry = cohorts[idx]
     const cohortSeed = campId + (cohortEntry.cohort?.id || String(idx))
     const rand = mulberry32(djb2(cohortSeed))
-    const { slots, findings } = scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, matchSeed: djb2(`${cohortSeed}|match`), locationCapById, locationNameById, electiveSetActivities, events, fixedEventsOnly, weekId })
+    const { slots, findings } = scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, matchSeed: djb2(`${cohortSeed}|match`), locationCapById, locationNameById, electiveSetActivities, events, fixedEventsOnly, weekId, previousWeekUsage })
     allSlots.push(...slots)
     allFindings.push(...findings)
     allFixedEvents.push(...(cohortEntry._legacyFixedEvents || []))

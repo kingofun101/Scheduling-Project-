@@ -57,6 +57,7 @@ export function useSnapshots({
   activityExclusions,
   groupExclusions,
   locationExclusions,
+  previousWeekUsage,
 }) {
   const {
     route,
@@ -189,7 +190,7 @@ export function useSnapshots({
     recalcStats(freshSlots)
     // Same route gate as the load loop: findingsContext (useScheduleData).
     setFindings(recalcFindings(freshSlots, findingsContext(route, {
-      groups, activities, days, timeBlocks, replacedDayIds, fixedEvents, weekId, activityExclusions, groupExclusions, locationExclusions,
+      groups, activities, days, timeBlocks, replacedDayIds, fixedEvents, weekId, activityExclusions, groupExclusions, locationExclusions, previousWeekUsage,
     })))
     setDismissedFindingKeys(new Set())
 

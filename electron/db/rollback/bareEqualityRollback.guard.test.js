@@ -137,11 +137,13 @@ describe('rollback bare-equality schema_migrations guard', () => {
     // 58 is v97_down.js (director test 2026-10-12 — last_import_undo).
     //
     // 59 is v98_down.js (UX audit A1 — open_reconciliation_decisions.payload).
+    //
+    // 60 is v99_down.js (fork — activities.allowed_periods/rotate_every_weeks).
     expect(
       files.length,
       'a new electron/db/rollback/vNN_down.js landed — bump this literal and add a dated ' +
         'one-line note above it (like the v84/v85/v86 notes) saying which vNN it is'
-    ).toBe(59)
+    ).toBe(60)
   })
 
   it('every rollback file uses `>= N`, never bare `= N`, to delete its schema_migrations row', () => {

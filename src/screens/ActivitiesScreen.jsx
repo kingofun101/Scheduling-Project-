@@ -30,6 +30,8 @@ import { createScheduleRepository } from '../data/scheduleRepository'
 import { createSetupCrudRepository } from '../data/setupCrudRepository'
 import { LocationPicker } from '../components/LocationPicker'
 import { CapacityStepper } from '../components/CapacityStepper'
+import ActivityPeriodsEditor from '../components/setup/ActivityPeriodsEditor'
+import { parseAllowedPeriods, serializeAllowedPeriods } from '../engine/allowedPeriods.js'
 import { resolveLocationCandidateId } from '../../electron/ops/locationId.js'
 import { CONFIDENCE_COPY, plainEvidenceSentence } from '../components/reconciliation/reconciliationCards.jsx'
 import { deriveActivityProvenance, hasAnyEvidence, worstTier, TIER_LABEL, needsLook, NEEDS_LOOK_DOT_STYLE } from '../utils/ruleProvenance.js'
@@ -57,6 +59,7 @@ function normalizeActivity(row) {
     priority: row.priority || 'low',
     eligible_tier_ids: parseIdList(row.eligible_tier_ids),
     eligible_group_ids: parseIdList(row.eligible_group_ids),
+    rotate_every_weeks: row.rotate_every_weeks ?? null,
   }
 }
 
@@ -265,7 +268,7 @@ function RuleProvenanceDot({ activity, evidenceByField, fieldSources, onConfirmF
   )
 }
 
-function ActivityModal({ activity, tiers, groups, activities, locations, onSave, onClose, onCreateLocation, onUpdateLocationCapacity }) {
+function ActivityModal({ activity, tiers, groups, days, timeBlocks, activities, locations, onSave, onClose, onCreateLocation, onUpdateLocationCapacity }) {
   const isNew = !activity?.id
   const [name, setName] = useState(activity?.name || '')
   const [locationId, setLocationId] = useState(activity?.location_id ?? null)
@@ -284,6 +287,13 @@ function ActivityModal({ activity, tiers, groups, activities, locations, onSave,
   const [weatherAlt, setWeatherAlt] = useState(activity?.weather_alternative_id || '')
   const [notes, setNotes] = useState(activity?.notes || '')
   const [spanBlocks, setSpanBlocks] = useState(activity?.span_blocks ?? 1)
+  // v99: allowed periods per division, as {tierId: ["dayId|blockId", ...]}; a division with no entry is unrestricted.
+  const [periods, setPeriods] = useState(() => {
+    const parsed = parseAllowedPeriods(activity?.allowed_periods)
+    return parsed ? Object.fromEntries([...parsed].map(([tierId, cells]) => [tierId, [...cells]])) : {}
+  })
+  // v99: very popular activity: a group should not get it in two consecutive weeks (every other week at most).
+  const [rotate, setRotate] = useState((activity?.rotate_every_weeks ?? 0) > 1)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
   // Default expanded if an existing activity already has data in a hidden
@@ -317,6 +327,8 @@ function ActivityModal({ activity, tiers, groups, activities, locations, onSave,
       prefer_before_day_min: preferDay ? Number(preferMin) : null,
       weather_alternative_id: weatherAlt || null,
       notes: notes.trim() || null,
+      allowed_periods: serializeAllowedPeriods(new Map(Object.entries(periods).map(([t, cells]) => [t, new Set(cells)]))),
+      rotate_every_weeks: rotate ? 2 : null,
     }
     try {
       // onSave must re-throw on failure — that's what keeps saveError
@@ -420,6 +432,25 @@ function ActivityModal({ activity, tiers, groups, activities, locations, onSave,
           </div>
         </Field>
 
+        <Field label="Available periods (leave a division on “any period” for no limit)">
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
+            For example, Boating for one division only Monday 1st and Thursday 4th. The same every week.
+          </div>
+          <ActivityPeriodsEditor tiers={tiers} days={days} timeBlocks={timeBlocks} value={periods} onChange={setPeriods} />
+        </Field>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={checkLabel}>
+            <input type="checkbox" checked={rotate} onChange={e => setRotate(e.target.checked)} style={{ marginRight: 6 }} />
+            Very popular: no group gets it two weeks in a row
+          </label>
+          {rotate && (
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', paddingLeft: 22, marginTop: 4 }}>
+              Generate spaces it out to every other week where it can, and flags any group that has to repeat.
+            </div>
+          )}
+        </div>
+
         <button
           type="button"
           onClick={() => setShowMore(v => !v)}
@@ -515,6 +546,8 @@ export default function ActivitiesScreen({ campId, role, onNavigate, weekId, wee
   const [tiers, setTiers] = useState([])
   const [groups, setGroups] = useState([])
   const [locations, setLocations] = useState([])
+  const [days, setDays] = useState([])
+  const [timeBlocks, setTimeBlocks] = useState([])
   const [loading, setLoading] = useState(true)
   // initialNewName: an import's left-out activity opens the new-activity form already named.
   const [modal, setModal] = useState(initialNewName ? { activity: { name: initialNewName } } : null) // null | { activity } — activity=null means new
@@ -602,12 +635,14 @@ export default function ActivitiesScreen({ campId, role, onNavigate, weekId, wee
     setLoading(true)
     setError(null)
     try {
-      const [aData, tData, gData, lData, provenanceData] = await Promise.all([
+      const [aData, tData, gData, lData, provenanceData, dData, bData] = await Promise.all([
         localClient.list('activities'),
         localClient.list('tiers'),
         localClient.list('groups'),
         localClient.list('locations'),
         localClient.listImportEvidence(),
+        localClient.list('days_of_operation'),
+        localClient.list('time_blocks'),
       ])
       setProvenance(provenanceData || { evidence: [], fieldSources: {} })
       // T266 — NOT filtered here, deliberately, and this is a correction worth
@@ -632,6 +667,8 @@ export default function ActivitiesScreen({ campId, role, onNavigate, weekId, wee
       setTiers((tData || []).filter(t => t.camp_id === campId))
       setGroups((gData || []).filter(g => g.camp_id === campId))
       setLocations((lData || []).filter(l => l.camp_id === campId))
+      setDays((dData || []).filter(d => d.camp_id === campId))
+      setTimeBlocks((bData || []).filter(b => b.camp_id === campId))
     } catch {
       setError("Couldn't load your camp setup — check your connection and refresh.")
     } finally {
@@ -1318,6 +1355,8 @@ export default function ActivitiesScreen({ campId, role, onNavigate, weekId, wee
           activity={modal.activity}
           tiers={tiers}
           groups={groups}
+          days={days}
+          timeBlocks={timeBlocks}
           activities={activities}
           locations={locations}
           onSave={saveActivity}

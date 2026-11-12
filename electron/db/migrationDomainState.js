@@ -357,6 +357,11 @@ export const SCHEMA_ONLY_MIGRATIONS = new Set([
   // v98 (UX audit A1) adds open_reconciliation_decisions.payload, NULL on every existing row, on a
   // device-local table. Schema-only: no appendOp, no backfill.
   98,
+  // v99 (fork: activity periods + rotation) ALTER-adds activities.allowed_periods and
+  // activities.rotate_every_weeks, NULL on every existing row. Schema-only: no appendOp, no backfill —
+  // NULL means "no limits", which is how every activity already behaved, so what an existing camp MEANS
+  // is unaffected (same reading as v75's catalog_role).
+  99,
 ])
 
 /** True if applying `version` can change what the camp means. */

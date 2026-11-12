@@ -78,6 +78,8 @@ export const SETTINGS_CALLEE_REGISTRY = {
       'cohorts', 'days', 'activities', 'campId', 'locations', 'electiveSetActivities',
       'events', 'fixedEventsOnly', 'weekId', 'replacedDayIds',
       'timeBlocks', 'tiers', 'groups', 'preplacedSlots', 'fixedEvents',
+      // 2026-11 (fork, rotation): read by both normalizeInput branches.
+      'previousWeekUsage',
     ]),
   },
 }

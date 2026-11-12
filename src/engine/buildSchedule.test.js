@@ -328,6 +328,13 @@ describe('UNFILLABLE flag', () => {
     expect(u.flags.UNFILLABLE_reason).toBe('Weekly max reached')
   })
 
+  it('lists each blocked activity by name in UNFILLABLE_detail', () => {
+    const days = [0, 1].map(i => ({ id: `d${i}`, label: `D${i}`, day_of_week: i + 1, sort_order: i }))
+    const { slots } = buildSchedule(minimal({ days, activities: [act('swim', { max_per_week: 1 })] }))
+    const u = slots.find(s => s.flags?.UNFILLABLE)
+    expect(u.flags.UNFILLABLE_detail).toEqual(['swim: Weekly max reached'])
+  })
+
   it('names "Already on today" when every candidate already ran for this group today', () => {
     const { slots } = buildSchedule(minimal({ timeBlocks: [block(1), block(2)], activities: [act('swim')] }))
     const u = slots.find(s => s.flags?.UNFILLABLE)

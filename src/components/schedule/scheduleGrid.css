@@ -883,6 +883,15 @@
   font-weight: 600;
 }
 
+/* "What fits here": the honest empty answer, not an option — not selectable. */
+.cell-inline-editor-suggestions-empty {
+  padding: 4px 8px 6px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
 /* T105 §1 — elective chip preview: rendered BELOW the input during editing
    only (edit-time-only visual growth, not a permanent layout change), one
    chip per parsed member token, live. */

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { cellAccessibleName } from './cellLabel'
 import CellInlineEditor from './CellInlineEditor'
 import './scheduleGrid.css'
@@ -38,11 +38,16 @@ export default function EmptyCell({
   // 4). onCellSelect is only invoked when pasteMode is true; an empty cell
   // has nothing to select outside of paste mode (design §2 decision 1).
   pasteMode = false, onCellSelect,
+  // "What fits here" (Generated schedule only): (cell) → { fits, blocked } | null.
+  // Asked once, when the editor opens — never per render or per keystroke.
+  fitsFor,
 }) {
   const [editing, setEditing] = useState(false)
 
   const slot = { groupId, dayId, blockId }
   const cellKey = `${groupId}|${dayId}|${blockId}`
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately once per opening; the editor closes on any write
+  const fits = useMemo(() => (editing && fitsFor ? fitsFor(slot)?.fits : undefined), [editing])
 
   function activate(e) {
     if (onCellClick) { onCellClick(slot); return true }
@@ -94,6 +99,7 @@ export default function EmptyCell({
           eligibleEvents={eligibleEvents}
           electiveSets={electiveSetsAll}
           currentActivityName={null}
+          fits={fits}
           onPlace={(activityId) => { setEditing(false); onPlace?.(slot, activityId) }}
           onCreateNew={(name) => { setEditing(false); onCreateNew?.(slot, name) }}
           onCreateElective={onCreateElective ? (setName, memberNames) => { setEditing(false); onCreateElective(slot, setName, memberNames) } : undefined}

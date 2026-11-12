@@ -29,6 +29,11 @@ export default function CellInlineEditor({
   // discoverable from the week. Picking one goes through onCreateElective with
   // no members, which createElectiveFromCell resolves to the existing durable set.
   electiveSets = [],
+  // "What fits here" (Generated schedule only): [{ activityId, name, note }] from
+  // probeCell — what can go in this cell as the week stands. Shown first while
+  // nothing is typed; undefined (the default) leaves the editor exactly as before.
+  // An empty array is shown, not hidden: "nothing fits" is the answer, not noise.
+  fits,
 }) {
   const [value, setValue] = useState('')
   const [activeIndex, setActiveIndex] = useState(-1)
@@ -152,15 +157,19 @@ export default function CellInlineEditor({
   // findable from the cell without knowing its name (audit-2 A9).
   const options = useMemo(() => {
     if (hasColon || exact || exactEvent) return []
-    const sets = list => list.map(set => ({ key: `es-${set.id}`, label: set.name, kind: 'elective', item: set }))
-    if (!query) return sets(durableSets)
+    const sets = list => list.map(set => ({ key: `es-${set.id}`, label: set.name, kind: 'elective', item: set, group: 'Elective sets' }))
+    if (!query) {
+      const fitRows = (fits || []).map(f => ({ key: `fit-${f.activityId}`, label: f.name, note: f.note, kind: 'activity', item: { id: f.activityId }, group: 'Fits here' }))
+      return [...fitRows, ...sets(durableSets)]
+    }
     const rows = [
       ...matches.map(a => ({ key: `a-${a.id}`, label: a.name, kind: 'activity', item: a })),
       ...(onPlaceEvent ? eventMatches.map(ev => ({ key: `e-${ev.id}`, label: ev.name, kind: 'event', item: ev })) : []),
       ...sets(electiveMatches),
     ]
     return rows.length > 0 ? rows : [{ key: 'create', label: `Create "${value.trim()}"`, kind: 'create' }]
-  }, [hasColon, exact, exactEvent, query, durableSets, matches, eventMatches, electiveMatches, onPlaceEvent, value])
+  }, [hasColon, exact, exactEvent, query, durableSets, matches, eventMatches, electiveMatches, onPlaceEvent, value, fits])
+  const nothingFits = !query && Array.isArray(fits) && fits.length === 0
 
   function pick(option) {
     if (option.kind === 'elective') { placeElective(option.item); return }
@@ -223,7 +232,7 @@ export default function CellInlineEditor({
           })}
         </div>
       )}
-      {options.length > 0 && anchor && createPortal(
+      {(options.length > 0 || nothingFits) && anchor && createPortal(
         <div
           className="cell-inline-editor-suggestions"
           role="listbox"
@@ -233,24 +242,37 @@ export default function CellInlineEditor({
           onClick={e => e.stopPropagation()}
           style={{ position: 'fixed', top: anchor.top, left: anchor.left, width: anchor.width }}
         >
-          {!query && <div className="cell-inline-editor-suggestions-heading">Elective sets</div>}
-          {options.map((o, i) => (
+          {nothingFits && (
+            <>
+              <div className="cell-inline-editor-suggestions-heading">Fits here</div>
+              <div className="cell-inline-editor-suggestions-empty">Nothing fits here right now</div>
+            </>
+          )}
+          {options.map((o, i) => [
+            !query && o.group && o.group !== options[i - 1]?.group && (
+              <div key={`h-${o.group}`} className="cell-inline-editor-suggestions-heading">{o.group}</div>
+            ),
             <div
               key={o.key}
               role="option"
               aria-selected={i === activeIndex}
               className={o.kind === 'create' ? 'cell-inline-editor-suggestion cell-inline-editor-suggestion--create' : 'cell-inline-editor-suggestion'}
               onMouseDown={e => { e.preventDefault(); pick(o) }}
-              style={o.kind === 'elective' ? { display: 'flex', alignItems: 'center', gap: 6 } : undefined}
+              style={o.kind === 'elective' || o.note ? { display: 'flex', alignItems: 'center', gap: 6 } : undefined}
             >
               {o.kind === 'elective' ? (
                 <>
                   <span title={o.label} style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
                   <span style={ELECTIVE_TAG}>Elective</span>
                 </>
+              ) : o.note ? (
+                <>
+                  <span title={o.label} style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+                  <span style={FIT_NOTE}>{o.note}</span>
+                </>
               ) : o.label}
-            </div>
-          ))}
+            </div>,
+          ])}
         </div>,
         document.body
       )}
@@ -262,3 +284,4 @@ const ELECTIVE_TAG = {
   fontSize: 10, fontWeight: 600, padding: '0 5px', borderRadius: 4, flexShrink: 0,
   color: 'var(--secondary)', background: 'color-mix(in srgb, var(--secondary) 12%, transparent)',
 }
+const FIT_NOTE = { fontSize: 10, color: 'var(--text-secondary)', flexShrink: 0, whiteSpace: 'nowrap' }

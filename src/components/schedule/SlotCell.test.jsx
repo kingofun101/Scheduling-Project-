@@ -974,3 +974,25 @@ describe('press-scale timer lifecycle', () => {
     }
   })
 })
+
+describe('SlotCell — what fits here (Generated route)', () => {
+  const holeSlot = { id: 's2', groupId: 'g1', dayId: 'd1', blockId: 'b2', type: 'activity', activity_id: null, flags: { UNFILLABLE: true, UNFILLABLE_reason: 'Place full' } }
+  const renderCell = (props) => render(<DndContext><SlotCell cellKey="k" {...props} /></DndContext>)
+
+  it('an unfillable cell shows what fits when its editor opens', () => {
+    const fitsFor = vi.fn(() => ({ fits: [{ activityId: 'a1', name: 'Soccer', note: 'Needs 1 more this week' }], blocked: [] }))
+    const { container } = renderCell({ slot: holeSlot, activity: null, fitsFor })
+    fireEvent.doubleClick(container.querySelector('[role="gridcell"]'))
+    expect(fitsFor).toHaveBeenCalledTimes(1)
+    expect(fitsFor.mock.calls[0][0]).toMatchObject({ groupId: 'g1', dayId: 'd1', blockId: 'b2' })
+    expect(document.querySelector('.cell-inline-editor-suggestion').textContent).toBe('SoccerNeeds 1 more this week')
+  })
+
+  it('a filled cell never asks', () => {
+    const fitsFor = vi.fn()
+    const { container } = renderCell({ slot, activity: { id: 'a1', name: 'Soccer' }, fitsFor })
+    fireEvent.doubleClick(container.querySelector('[role="gridcell"]'))
+    expect(container.querySelector('.cell-inline-editor-input')).not.toBeNull()
+    expect(fitsFor).not.toHaveBeenCalled()
+  })
+})

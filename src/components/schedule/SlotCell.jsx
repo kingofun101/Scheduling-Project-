@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { S, prefersReducedMotion } from '../../styles/shared'
 import { useLatestTimeout } from '../../hooks/useLatestTimeout'
@@ -86,12 +86,19 @@ export default function SlotCell({
   // normal presentation and simply gets shorter, because grid sums the tracks
   // it covers. Nothing about mounting, handlers or focusability changes.
   collapsed = false,
+  // "What fits here" (Generated schedule only): (cell) → { fits, blocked } | null.
+  // Offered only on a cell that holds nothing (unfillable or unassigned), and
+  // asked once, when the editor opens.
+  fitsFor,
 }) {
   // The only remaining state in this component. Hover, split-hover and
   // reason-focus were all deleted in T56: :hover and :focus-within in
   // scheduleGrid.css do that work now, so hovering a cell re-renders nothing.
   const [pressed, setPressed] = useState(false)
   const [editing, setEditing] = useState(false)
+  const holdsNothing = !slot.activity_id && !slot.fixed_event_id && !slot.elective_set_id && !slot.event_id && slot.type !== 'fixed_event'
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately once per opening; the editor closes on any write
+  const fits = useMemo(() => (editing && holdsNothing && fitsFor ? fitsFor(slot)?.fits : undefined), [editing])
 
   const nameFor = subject => cellAccessibleName({ subject, blockNames, column })
 
@@ -464,6 +471,7 @@ export default function SlotCell({
             eligibleEvents={eventsAll}
             electiveSets={electiveSetsAll}
             currentActivityName={activity?.name ?? electiveLabel ?? eventLabel ?? null}
+            fits={fits}
             onPlace={(activityId) => { setEditing(false); onPlace?.(slot, activityId) }}
             onCreateNew={(name) => { setEditing(false); onCreateNew?.(slot, name) }}
             onCreateElective={onCreateElective ? (setName, memberNames) => { setEditing(false); onCreateElective(slot, setName, memberNames) } : undefined}

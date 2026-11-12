@@ -208,3 +208,58 @@ describe('CellInlineEditor — elective sets as suggestions (packaged audit #26)
     expect(onCreateNew).not.toHaveBeenCalled()
   })
 })
+
+describe('CellInlineEditor — what fits here', () => {
+  const sets = [{ id: 'es-1', name: 'Afternoon Chugim', is_reusable: 1 }]
+  const fits = [
+    { activityId: 'act-1', name: 'Swimming', note: 'Needs 1 more this week' },
+    { activityId: 'act-2', name: 'Arts & Crafts', note: null },
+  ]
+  const renderEditor = (props = {}) => render(
+    <CellInlineEditor eligibleActivities={eligible} electiveSets={sets} currentActivityName={null} onPlace={vi.fn()} onCreateNew={vi.fn()} onCreateElective={vi.fn()} onCancel={vi.fn()} {...props} />
+  )
+  const headings = () => [...document.querySelectorAll('.cell-inline-editor-suggestions-heading')].map(h => h.textContent)
+  const rows = () => [...document.querySelectorAll('.cell-inline-editor-suggestion')].map(r => r.textContent)
+
+  it('opens with what fits first, in the given order, with its note, then the elective sets', () => {
+    renderEditor({ fits })
+    expect(headings()).toEqual(['Fits here', 'Elective sets'])
+    expect(rows()).toEqual(['SwimmingNeeds 1 more this week', 'Arts & Crafts', 'Afternoon ChugimElective'])
+  })
+
+  it('picking a fit places that activity through the normal place path', () => {
+    const onPlace = vi.fn()
+    renderEditor({ fits, onPlace })
+    fireEvent.mouseDown(screen.getByText('Arts & Crafts').closest('.cell-inline-editor-suggestion'))
+    expect(onPlace).toHaveBeenCalledWith('act-2')
+  })
+
+  it('Enter with the first fit highlighted places it', () => {
+    const onPlace = vi.fn()
+    renderEditor({ fits, onPlace })
+    const input = screen.getByRole('textbox')
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onPlace).toHaveBeenCalledWith('act-1')
+  })
+
+  it('says plainly when nothing fits, rather than showing an empty list', () => {
+    renderEditor({ fits: [], electiveSets: [] })
+    expect(headings()).toEqual(['Fits here'])
+    expect(screen.getByText('Nothing fits here right now')).toBeTruthy()
+    expect(rows()).toEqual([])
+  })
+
+  it('typing still searches every eligible activity, not only the fits', () => {
+    renderEditor({ fits: [fits[1]] })
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'swi' } })
+    expect(rows()).toEqual(['Swimming'])
+    expect(headings()).toEqual([])
+  })
+
+  it('without a fits list (Manual route, filled cells) the editor opens exactly as before', () => {
+    renderEditor()
+    expect(headings()).toEqual(['Elective sets'])
+    expect(screen.queryByText('Nothing fits here right now')).toBeNull()
+  })
+})

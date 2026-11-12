@@ -180,3 +180,26 @@ describe('EmptyCell — three-way precedence: stamp > paste > edit (T112 design 
     expect(container.querySelector('.cell-inline-editor-input')).not.toBeNull()
   })
 })
+
+describe('EmptyCell — what fits here (Generated route)', () => {
+  it('asks fitsFor once, for this cell, only when the editor opens, and shows the fits', () => {
+    const fitsFor = vi.fn(() => ({ fits: [{ activityId: 'a1', name: 'Soccer', note: null }], blocked: [] }))
+    const { container } = renderCell({ fitsFor })
+    expect(fitsFor).not.toHaveBeenCalled()
+    fireEvent.doubleClick(container.querySelector('[role="gridcell"]'))
+    expect(fitsFor).toHaveBeenCalledTimes(1)
+    expect(fitsFor).toHaveBeenCalledWith({ groupId: 'g1', dayId: 'd1', blockId: 'b1' })
+    fireEvent.change(container.querySelector('.cell-inline-editor-input'), { target: { value: '' } })
+    expect(fitsFor).toHaveBeenCalledTimes(1)
+    const heading = document.querySelector('.cell-inline-editor-suggestions-heading')
+    expect(heading.textContent).toBe('Fits here')
+  })
+
+  it('picking a fit places it in this cell', () => {
+    const fitsFor = () => ({ fits: [{ activityId: 'a1', name: 'Soccer', note: null }], blocked: [] })
+    const { container, onPlace } = renderCell({ fitsFor })
+    fireEvent.doubleClick(container.querySelector('[role="gridcell"]'))
+    fireEvent.mouseDown(document.querySelector('.cell-inline-editor-suggestion'))
+    expect(onPlace).toHaveBeenCalledWith({ groupId: 'g1', dayId: 'd1', blockId: 'b1' }, 'a1')
+  })
+})

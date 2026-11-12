@@ -8,7 +8,7 @@ import Database from 'better-sqlite3'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { initSchema } from '../../db/localDb.js'
 import {
   rememberPeerAddress,
@@ -20,7 +20,17 @@ import {
 
 const files = []
 
+// The fixtures stamp addresses at 2026-10-02. listTrustedRememberedAddresses drops a LAN row older than
+// LAN_ADDRESS_MAX_AGE_MS (30 days) measured against Date.now, so on the real clock these tests began
+// failing on 2026-11-01. Pin only the Date clock to just after the fixtures; timers stay real so the
+// redial timeout/parallelism tests are unaffected.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-03T00:00:00.000Z'))
+})
+
 afterEach(() => {
+  vi.useRealTimers()
   for (const f of files.splice(0)) {
     for (const suffix of ['', '-wal', '-shm']) {
       if (fs.existsSync(f + suffix)) fs.unlinkSync(f + suffix)

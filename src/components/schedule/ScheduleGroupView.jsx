@@ -17,6 +17,8 @@ export default function ScheduleGroupView({
   releaseCell,
   geometry,
   eligibleActivitiesFor, onPlace, onCreateNew,
+  // "What fits here" — (cell) → { fits, blocked } | null; handed to every cell that can open the editor.
+  fitsFor,
   onExpandSlot,
   onSplitSlot,
   // T107 item 1 / ADR §5 — generated-route parity: same drag-to-extend
@@ -56,6 +58,7 @@ export default function ScheduleGroupView({
           column={day.label}
           eligibleActivities={eligibleActivitiesFor?.(selectedGroup) ?? []}
           onPlace={onPlace}
+          fitsFor={fitsFor}
           onCreateNew={onCreateNew}
           onCreateElective={onCreateElective}
           electiveSetsAll={electiveSetsAll}
@@ -97,6 +100,7 @@ export default function ScheduleGroupView({
         fixedEvent={fixedEvent}
         eligibleActivities={eligibleActivitiesFor?.(selectedGroup) ?? []}
         onPlace={onPlace}
+        fitsFor={fitsFor}
         onCreateNew={onCreateNew}
         onCreateElective={onCreateElective}
         electiveSetsAll={electiveSetsAll}

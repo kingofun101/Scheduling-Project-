@@ -28,6 +28,8 @@ export default function ScheduleDayView({
   releaseCell,
   geometry,
   eligibleActivitiesFor, onPlace, onCreateNew,
+  // "What fits here" — (cell) → { fits, blocked } | null; handed to every cell that can open the editor.
+  fitsFor,
   // WS5 follow-up "Daily-first + restore Daily merge" — same handler
   // instances Group view already receives (route- and view-agnostic).
   onExpandSlot,
@@ -164,6 +166,7 @@ export default function ScheduleDayView({
                             column={group.name}
                             eligibleActivities={eligibleActivitiesFor?.(group.id) ?? []}
                             onPlace={onPlace}
+                            fitsFor={fitsFor}
                             onCreateNew={onCreateNew}
                             onCreateElective={onCreateElective}
                             electiveSetsAll={electiveSetsAll}
@@ -203,6 +206,7 @@ export default function ScheduleDayView({
                           fixedEvent={fixedEvent}
                           eligibleActivities={eligibleActivitiesFor?.(group.id) ?? []}
                           onPlace={onPlace}
+                          fitsFor={fitsFor}
                           onCreateNew={onCreateNew}
                           onCreateElective={onCreateElective}
                           electiveSetsAll={electiveSetsAll}

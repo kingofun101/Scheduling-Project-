@@ -287,7 +287,7 @@ const UNFILLABLE_TAGS = {
   rotation: 'Had it last week',
 }
 
-function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, matchSeed, locationCapById, locationNameById, electiveSetActivities, events, fixedEventsOnly = false, weekId = null, previousWeekUsage = [] }) {
+function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, matchSeed, locationCapById, locationNameById, electiveSetActivities, events, fixedEventsOnly = false, weekId = null, previousWeekUsage = [], probe = null }) {
   const { cohort, timeBlocks, tiers: _tiers, groups, preplacedSlots, activityTargets, _legacyFixedEvents } = cohortEntry
   const cohortId = cohort?.id ?? null
 
@@ -773,6 +773,24 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
         place(act, pre.groupId, pre.dayId, pre.blockId)
         preplacedKeys.add(key)
       }
+    }
+  }
+
+  // "What fits here" (probeCell below): with every cell the caller passed already
+  // placed, ask the same blockedBy() Pass 2 uses about each eligible activity at
+  // ONE cell, and stop before anything is generated. Nothing is placed or returned
+  // as a slot, so the probe can never move or fill a cell on its own.
+  if (probe) {
+    const os = openSlots.find(o => o.groupId === probe.groupId && o.dayId === probe.dayId && o.blockId === probe.blockId)
+    if (!os) return { slots: [], findings: [], probe: null }
+    return {
+      slots: [],
+      findings: [],
+      probe: os.eligibleActs.map(act => ({
+        activity: act,
+        code: blockedBy(act, os.groupId, os.dayId, os.blockId),
+        countThisWeek: getCount(os.groupId, act.id),
+      })),
     }
   }
 
@@ -1646,17 +1664,15 @@ export function computeFindings({ slots: allSlots, groups, activities, days: all
   return findings
 }
 
-function buildSchedule(input) {
-  const { cohorts, days, replacedDays, activities, campId, locations, electiveSetActivities, events, fixedEventsOnly, weekId, previousWeekUsage } = normalizeInput(input)
-
-  // location_id → capacity (how many GROUPS fit in this place at once). Built
-  // once from the camp's locations rows. A stored capacity of 0 or negative
-  // (not reachable via the M3a UI — CapacityStepper floors at 1 — but
-  // reachable via the op-log or a future import) floors to 1, matching M1's
-  // migration; a place always holds at least 1 group. A location_id absent
-  // from this map entirely (dangling — see placeBlocked) is a different case
-  // and is NOT defaulted here: its absence from the map is exactly what tells
-  // placeBlocked to treat it as unconstrained.
+// location_id → capacity (how many GROUPS fit in this place at once). Built
+// once from the camp's locations rows. A stored capacity of 0 or negative
+// (not reachable via the M3a UI — CapacityStepper floors at 1 — but
+// reachable via the op-log or a future import) floors to 1, matching M1's
+// migration; a place always holds at least 1 group. A location_id absent
+// from this map entirely (dangling — see placeBlocked) is a different case
+// and is NOT defaulted here: its absence from the map is exactly what tells
+// placeBlocked to treat it as unconstrained.
+function locationMaps(locations) {
   const locationCapById = new Map()
   const locationNameById = new Map()
   for (const loc of (locations || [])) {
@@ -1665,6 +1681,68 @@ function buildSchedule(input) {
       locationNameById.set(loc.id, loc.name || loc.id)
     }
   }
+  return { locationCapById, locationNameById }
+}
+
+// "What fits here": which activities could go in ONE cell of the week as it
+// stands, judged by the same rules Generate places by (blockedBy).
+//
+// `input` is buildSchedule's input, except preplacedSlots should be EVERY cell the
+// caller wants held where it is (not only locked ones) and must leave out the cell
+// being asked about. `cell` is { groupId, dayId, blockId }.
+//
+// Returns null when the cell is not one the engine fills (a fixed event, elective,
+// event, events-only row, or a group/day/block not in the week). Otherwise
+// { fits, blocked }:
+//   fits    — [{ activityId, name, note }] that can go here now. Ordered: still
+//             short of its weekly minimum first, then fewest times this week, then
+//             name. One that repeats last week's rotation is listed last with a
+//             note, because Generate allows it there too as a last resort.
+//   blocked — [{ activityId, name, reason }] eligible for this group but ruled out
+//             here, with the same short cause an UNFILLABLE cell shows.
+export function probeCell(input, cell) {
+  const { cohorts, days, replacedDays, activities, campId, locations, electiveSetActivities, events, weekId, previousWeekUsage } = normalizeInput(input)
+  const { locationCapById, locationNameById } = locationMaps(locations)
+  for (let idx = 0; idx < cohorts.length; idx++) {
+    const cohortEntry = cohorts[idx]
+    if (!(cohortEntry.groups || []).some(g => g.id === cell.groupId)) continue
+    const cohortSeed = campId + (cohortEntry.cohort?.id || String(idx))
+    const { probe } = scheduleCohort({
+      cohortEntry, days, replacedDays, activities,
+      rand: mulberry32(djb2(cohortSeed)), matchSeed: djb2(`${cohortSeed}|match`),
+      locationCapById, locationNameById, electiveSetActivities, events, weekId, previousWeekUsage,
+      probe: cell,
+    })
+    return probe ? rankProbe(probe) : null
+  }
+  return null
+}
+
+function rankProbe(candidates) {
+  const name = a => a.name || a.id
+  const shortBy = c => c.activity.min_per_week > 0 ? Math.max(0, c.activity.min_per_week - c.countThisWeek) : 0
+  const order = (a, b) => (shortBy(b) - shortBy(a)) || (a.countThisWeek - b.countThisWeek) || name(a.activity).localeCompare(name(b.activity))
+  const note = c => {
+    const short = shortBy(c)
+    return short > 0 ? `Needs ${short} more this week` : null
+  }
+  const clean = [...candidates.filter(c => c.code === null)].sort(order)
+  const repeats = [...candidates.filter(c => c.code === 'rotation')].sort(order)
+  return {
+    fits: [
+      ...clean.map(c => ({ activityId: c.activity.id, name: name(c.activity), note: note(c) })),
+      ...repeats.map(c => ({ activityId: c.activity.id, name: name(c.activity), note: UNFILLABLE_TAGS.rotation })),
+    ],
+    blocked: candidates
+      .filter(c => c.code !== null && c.code !== 'rotation')
+      .sort((a, b) => name(a.activity).localeCompare(name(b.activity)))
+      .map(c => ({ activityId: c.activity.id, name: name(c.activity), reason: UNFILLABLE_TAGS[c.code] })),
+  }
+}
+
+function buildSchedule(input) {
+  const { cohorts, days, replacedDays, activities, campId, locations, electiveSetActivities, events, fixedEventsOnly, weekId, previousWeekUsage } = normalizeInput(input)
+  const { locationCapById, locationNameById } = locationMaps(locations)
 
   // Findings that are properties of an activity, not of any one cohort/group,
   // so computed once here rather than per cohort. Gated by fixedEventsOnly like

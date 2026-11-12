@@ -53,6 +53,7 @@ import { isActivityEligibleForGroup } from '../engine/eligibility'
 import { filterFreeChoiceActivities } from '../engine/freeChoiceActivities'
 import { blockDisplayName } from '../utils/timeBlockLabel.js'
 import { outdoorActivitiesMissingRainPlan, RAIN_PLAN_FULL_TEXT } from '../utils/rainyDay'
+import { fitsForCell } from './schedule/cellFits'
 
 // dnd-kit's own announcer describes droppable IDs, which after T58 are one
 // container rather than 480 cells — it would say "over droppable
@@ -315,6 +316,19 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
     // are different questions: "pass 1/2 already claimed this name" versus "this
     // group does this activity". The eligibility filter below is unchanged.
     return filterFreeChoiceActivities(activities).filter(a => isActivityEligibleForGroup(a, g))
+  }
+
+  // "What fits here": the cell editor on an open or unfillable Generated cell
+  // lists what can go there as the week stands, judged by Generate's own rules
+  // (src/screens/schedule/cellFits.js). Generated route only — the Manual route
+  // is the director's spreadsheet and is never second-guessed by the engine.
+  function fitsFor(cell) {
+    return fitsForCell({
+      storedSlots: slotsByRoute.generated, cell,
+      groups, tiers, days, timeBlocks, activities, fixedEvents, locations,
+      electiveSetActivities, events: eventsAll, weekId, replacedDayIds, previousWeekUsage,
+      activityExclusions, groupExclusions, locationExclusions, campId,
+    })
   }
 
   function handleCellPlace(slot, activityId) {
@@ -1446,6 +1460,7 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
                 geometry={geometry}
                 eligibleActivitiesFor={eligibleActivitiesFor}
                 onPlace={handleCellPlace}
+                fitsFor={route === 'generated' ? fitsFor : undefined}
                 onCreateNew={handleCellCreateNew}
                 onCreateElective={handleCellCreateElective}
                 onOpenElective={openElective}
@@ -1486,6 +1501,7 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
                 geometry={geometry}
                 eligibleActivitiesFor={eligibleActivitiesFor}
                 onPlace={handleCellPlace}
+                fitsFor={route === 'generated' ? fitsFor : undefined}
                 onCreateNew={handleCellCreateNew}
                 onCreateElective={handleCellCreateElective}
                 onOpenElective={openElective}

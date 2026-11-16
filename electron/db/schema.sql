@@ -618,7 +618,13 @@ CREATE TABLE IF NOT EXISTS activities (
   -- activity in two consecutive weeks (N = 2: at most one week in two). NULL/0/1 = no rotation.
   -- A preference the engine honours when it can and reports when it cannot, not a hard cap.
   -- Both v99 columns must stay LAST, in this order (column-order trap, as above).
-  rotate_every_weeks INTEGER
+  rotate_every_weeks INTEGER,
+  -- v100: daily spread. spread_group names a family of activities (e.g. 'Sports', 'Water');
+  -- spread_max_per_day is how many of that family one group should have in a single day.
+  -- A preference the engine honours when it can and reports when it cannot, not a hard cap.
+  -- NULL on either = no spread rule. Both v100 columns must stay LAST, in this order.
+  spread_group TEXT,
+  spread_max_per_day INTEGER
 );
 -- UNIQUE(camp_id, name) relaxed to a plain index in schema v73 (T241) — see the comment above
 -- `locations`. idx_activities_camp_name (originally added by localDb.js's version-15 migration)

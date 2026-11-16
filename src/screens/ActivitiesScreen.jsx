@@ -60,6 +60,8 @@ function normalizeActivity(row) {
     eligible_tier_ids: parseIdList(row.eligible_tier_ids),
     eligible_group_ids: parseIdList(row.eligible_group_ids),
     rotate_every_weeks: row.rotate_every_weeks ?? null,
+    spread_group: row.spread_group ?? null,
+    spread_max_per_day: row.spread_max_per_day ?? null,
   }
 }
 
@@ -294,6 +296,10 @@ function ActivityModal({ activity, tiers, groups, days, timeBlocks, activities, 
   })
   // v99: very popular activity: a group should not get it in two consecutive weeks (every other week at most).
   const [rotate, setRotate] = useState((activity?.rotate_every_weeks ?? 0) > 1)
+  // v100: daily spread. A family name (e.g. Sports, Water) and how many of that family one group
+  // should have in a single day. Activities sharing a family name share the limit.
+  const [spreadGroup, setSpreadGroup] = useState(activity?.spread_group ?? '')
+  const [spreadMax, setSpreadMax] = useState(activity?.spread_max_per_day ?? 2)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
   // Default expanded if an existing activity already has data in a hidden
@@ -329,6 +335,8 @@ function ActivityModal({ activity, tiers, groups, days, timeBlocks, activities, 
       notes: notes.trim() || null,
       allowed_periods: serializeAllowedPeriods(new Map(Object.entries(periods).map(([t, cells]) => [t, new Set(cells)]))),
       rotate_every_weeks: rotate ? 2 : null,
+      spread_group: spreadGroup.trim() || null,
+      spread_max_per_day: spreadGroup.trim() ? Number(spreadMax) : null,
     }
     try {
       // onSave must re-throw on failure — that's what keeps saveError
@@ -449,6 +457,23 @@ function ActivityModal({ activity, tiers, groups, days, timeBlocks, activities, 
               Generate spaces it out to every other week where it can, and flags any group that has to repeat.
             </div>
           )}
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Daily spread</div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
+            Give activities of one kind the same name, such as Sports or Water, and set how many of that kind one group gets in a day. Generate keeps to it where it can and flags any day that goes over.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input aria-label="Spread group" value={spreadGroup} onChange={e => setSpreadGroup(e.target.value)} placeholder="Kind, e.g. Sports" style={{ ...S.input, width: 170 }} />
+            <label style={{ fontSize: 13 }}>
+              At most
+              <select aria-label="Per day" value={spreadMax} onChange={e => setSpreadMax(e.target.value)} disabled={!spreadGroup.trim()} style={{ ...S.input, width: 64, margin: '0 6px' }}>
+                {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              per day
+            </label>
+          </div>
         </div>
 
         <button

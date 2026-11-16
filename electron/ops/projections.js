@@ -366,6 +366,9 @@ export const PROJECTIONS = {
       // preference. Registered here or they are written to the document and never materialize.
       'allowed_periods',
       'rotate_every_weeks',
+      // v100: spread family name and how many of it one group should have per day.
+      'spread_group',
+      'spread_max_per_day',
     ],
     ensureExists: (db, id) => {
       // Same zero-camps caveat as cohorts/groups/days_of_operation/time_blocks/tiers.ensureExists above.

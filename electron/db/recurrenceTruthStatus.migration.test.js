@@ -128,6 +128,8 @@ describe('migration v44: fresh vs migrated equivalence', () => {
       'catalog_role',
       // v99 — appended after catalog_role, in this order, for the same reason.
       'allowed_periods', 'rotate_every_weeks',
+      // v100 — appended after rotate_every_weeks, in this order.
+      'spread_group', 'spread_max_per_day',
     ])
     db.close()
   })
@@ -175,7 +177,7 @@ describe('migration v44: fresh vs migrated equivalence', () => {
     // property this test actually guards, since a fresh install's declaration
     // has to match what ALTER appends on a migrated one.
     expect(match[0]).toContain('recurrence_truth_status TEXT,')
-    expect(match[0]).toContain('rotate_every_weeks INTEGER\n);')
+    expect(match[0]).toContain('spread_max_per_day INTEGER\n);')
   })
 })
 

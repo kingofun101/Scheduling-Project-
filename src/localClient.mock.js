@@ -524,6 +524,9 @@ export const MOCK_WRITE_ALLOWLIST = {
     // v99 — mirrors PROJECTIONS.activities.fields.
     'allowed_periods',
     'rotate_every_weeks',
+    // v100 — mirrors PROJECTIONS.activities.fields.
+    'spread_group',
+    'spread_max_per_day',
   ],
   // Mirrors PROJECTIONS.locations.fields (kept honest by ipcSurfaceParity). map_id
   // is the v50 indoor/outdoor pair field; grid_x/grid_y ride along for op-log replay

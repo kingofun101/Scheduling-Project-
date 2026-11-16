@@ -362,6 +362,10 @@ export const SCHEMA_ONLY_MIGRATIONS = new Set([
   // NULL means "no limits", which is how every activity already behaved, so what an existing camp MEANS
   // is unaffected (same reading as v75's catalog_role).
   99,
+  // v100 (fork: daily spread rules) ALTER-adds activities.spread_group and activities.spread_max_per_day,
+  // NULL on every existing row. Schema-only: no appendOp, no backfill — NULL means "no spread rule",
+  // which is how every activity already behaved.
+  100,
 ])
 
 /** True if applying `version` can change what the camp means. */

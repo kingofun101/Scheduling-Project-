@@ -4,6 +4,7 @@ import { resolveFixedEventGroupIds, resolveFixedEventDayIds } from './fixedEvent
 import { isActivityEligibleForGroup } from './eligibility.js'
 import { parseAllowedPeriods, isPeriodAllowed } from './allowedPeriods.js'
 import { repeatedPairs, pairKey, rotationRepeatFindings } from './rotation.js'
+import { spreadRule, spreadKey, spreadFindings } from './spread.js'
 import { createDayLedger, removeOwnPlaceEntry } from './placementLedger.js'
 import { isFreeChoiceActivity } from './freeChoiceActivities.js'
 import { resolveElectiveOfferingLocations } from './electiveOccupancy.js'
@@ -285,6 +286,7 @@ const UNFILLABLE_TAGS = {
   overlap: 'Group busy at an overlapping time',
   period: 'Not a period for this activity',
   rotation: 'Had it last week',
+  spread: 'Daily limit reached',
 }
 
 function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, matchSeed, locationCapById, locationNameById, electiveSetActivities, events, fixedEventsOnly = false, weekId = null, previousWeekUsage = [] }) {
@@ -586,6 +588,12 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
   const repeatedLastWeek = repeatedPairs(activities, previousWeekUsage)
   let rotationStrict = repeatedLastWeek.size > 0
   const allowedPeriodsByActivity = new Map(activities.map(a => [a.id, parseAllowedPeriods(a.allowed_periods)]))
+  // Daily spread (v100): at most `max` activities of one family per group per day. Strict while
+  // placing; relaxed once at the end, before rotation, so a cell nothing else fills takes the extra one.
+  const spreadRuleByActivity = new Map()
+  for (const a of activities) { const r = spreadRule(a); if (r) spreadRuleByActivity.set(a.id, r) }
+  const spreadUsage = new Map() // "groupId|dayId|family" -> count
+  let spreadStrict = spreadRuleByActivity.size > 0
 
   function getCount(groupId, actId) {
     return usageCount.get(`${groupId}|${actId}`) || 0
@@ -595,6 +603,8 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
     const k = `${groupId}|${actId}`
     usageCount.set(k, (usageCount.get(k) || 0) + 1)
     dailyUsage.add(groupId, dayId, actId)
+    const sr = spreadRuleByActivity.get(actId)
+    if (sr) { const sk = spreadKey(groupId, dayId, sr.key); spreadUsage.set(sk, (spreadUsage.get(sk) || 0) + 1) }
   }
 
   function placedTodayForGroup(groupId, dayId, actId) {
@@ -637,6 +647,10 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
     // never starts anywhere else for that division.
     if (!isPeriodAllowed(act, group, dayId, blockId, allowedPeriodsByActivity.get(act.id))) return 'period'
     if (rotationStrict && repeatedLastWeek.has(pairKey(groupId, act.id))) return 'rotation'
+    if (spreadStrict) {
+      const sr = spreadRuleByActivity.get(act.id)
+      if (sr && (spreadUsage.get(spreadKey(groupId, dayId, sr.key)) || 0) >= sr.max) return 'spread'
+    }
     if (placeBlocked(act, group, dayId, blockId)) return 'place'
 
     const ownBlocks = [blockId]
@@ -735,6 +749,8 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
     const k = `${groupId}|${act.id}`
     usageCount.set(k, usageCount.get(k) - 1)
     dailyUsage.remove(groupId, dayId, act.id)
+    const sr = spreadRuleByActivity.get(act.id)
+    if (sr) { const sk = spreadKey(groupId, dayId, sr.key); const n = (spreadUsage.get(sk) || 0) - 1; if (n > 0) spreadUsage.set(sk, n); else spreadUsage.delete(sk) }
     const own = [blockId]
     const spanCount = act.span_blocks || 1
     if (spanCount > 1) {
@@ -1320,6 +1336,13 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
     repair()
     minRepair()
     fillRepair()
+    // Spread is a limit the engine keeps when it can: whatever is still empty may now take one more.
+    if (spreadStrict) {
+      spreadStrict = false
+      repair()
+      minRepair()
+      fillRepair()
+    }
     // Rotation is a preference, not a cap: whatever is still empty may now take a repeat.
     if (rotationStrict) {
       rotationStrict = false
@@ -1435,6 +1458,7 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
     }
 
     findings.push(...rotationRepeatFindings({ slots: resultSlots, groups, activities, usage: previousWeekUsage }))
+    findings.push(...spreadFindings({ slots: resultSlots, groups, activities, days }))
 
     for (const group of groups) {
       for (const act of activities) {
@@ -1548,6 +1572,7 @@ export function computeFindings({ slots: allSlots, groups, activities, days: all
   }
 
   findings.push(...rotationRepeatFindings({ slots, groups, activities, usage: previousWeekUsage }))
+  findings.push(...spreadFindings({ slots, groups, activities, days: allDays }))
 
   for (const group of groups) {
     for (const act of activities) {

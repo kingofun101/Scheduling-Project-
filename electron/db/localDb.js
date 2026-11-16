@@ -41,7 +41,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // campers.division_label/is_unattributed and elective_preferences.rank_kind/
 // coordinate_day_label/coordinate_period_label) all land in this file; 79 is the
 // current version.
-export const CURRENT_SCHEMA_VERSION = 99
+export const CURRENT_SCHEMA_VERSION = 100
 
 export function initSchema(db) {
   // template_overlays was retired in v53 (docs/adr/2026-08-30-retire-overlay-
@@ -4478,6 +4478,25 @@ const DEVICE_HEALTH_EVENTS_DDL = `
       }
     })()
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (99, ?)').run(
+      new Date().toISOString()
+    )
+  }
+
+  // v100 (fork: daily spread rules) — two additive, nullable columns on activities: spread_group
+  // (TEXT family name) and spread_max_per_day (INTEGER). Appended LAST in this order (schema.sql
+  // declares them last too). No backfill: NULL means "no spread rule", which is how every activity
+  // behaved before. Guard `>= 99 && < 100`, never a bare `< 100`.
+  if (getSchemaVersion(db) >= 99 && getSchemaVersion(db) < 100) {
+    db.transaction(() => {
+      const cols = db.pragma('table_info(activities)').map((c) => c.name)
+      if (!cols.includes('spread_group')) {
+        db.exec('ALTER TABLE activities ADD COLUMN spread_group TEXT')
+      }
+      if (!cols.includes('spread_max_per_day')) {
+        db.exec('ALTER TABLE activities ADD COLUMN spread_max_per_day INTEGER')
+      }
+    })()
+    db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (100, ?)').run(
       new Date().toISOString()
     )
   }

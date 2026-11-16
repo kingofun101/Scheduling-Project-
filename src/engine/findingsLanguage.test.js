@@ -36,6 +36,7 @@ const root = path.resolve(here, '..', '..')
 const FINDING_TEXT_SOURCES = [
   'src/engine/buildSchedule.js',
   'src/engine/rotation.js',
+  'src/engine/spread.js',
   'src/engine/effectiveDays.js',
   'src/utils/computeOverlaps.js',
   'src/utils/computeWeekClosures.js',

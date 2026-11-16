@@ -328,11 +328,22 @@ describe('UNFILLABLE flag', () => {
     expect(u.flags.UNFILLABLE_reason).toBe('Weekly max reached')
   })
 
-  it('lists each blocked activity by name in UNFILLABLE_detail', () => {
+  it('lists every blocked activity under its cause in UNFILLABLE_detail, with nothing cut off', () => {
     const days = [0, 1].map(i => ({ id: `d${i}`, label: `D${i}`, day_of_week: i + 1, sort_order: i }))
     const { slots } = buildSchedule(minimal({ days, activities: [act('swim', { max_per_week: 1 })] }))
     const u = slots.find(s => s.flags?.UNFILLABLE)
-    expect(u.flags.UNFILLABLE_detail).toEqual(['swim: Weekly max reached'])
+    expect(u.flags.UNFILLABLE_detail).toEqual(['Weekly max reached: swim'])
+  })
+
+  it('names all of many blocked activities, not just the first few', () => {
+    const days = [0, 1, 2, 3, 4, 5, 6, 7].map(i => ({ id: `d${i}`, label: `D${i}`, day_of_week: i + 1, sort_order: i }))
+    const names = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7']
+    const { slots } = buildSchedule(minimal({ days, timeBlocks: [block(1)], activities: names.map(n => act(n, { max_per_week: 1 })) }))
+    const u = slots.find(s => s.flags?.UNFILLABLE)
+    expect(u).toBeTruthy()
+    expect(u.flags.UNFILLABLE_detail).toHaveLength(1)
+    for (const n of names) expect(u.flags.UNFILLABLE_detail[0]).toContain(n)
+    expect(u.flags.UNFILLABLE_detail[0]).not.toMatch(/\d+ more/)
   })
 
   it('names "Already on today" when every candidate already ran for this group today', () => {

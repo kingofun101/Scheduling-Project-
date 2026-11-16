@@ -1413,18 +1413,18 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
         ? [...new Set(os.eligibleActs.map(a => blockedBy(a, os.groupId, os.dayId, os.blockId)))].filter(Boolean)
         : ['none']
       flags.UNFILLABLE_reason = codes.map(c => UNFILLABLE_TAGS[c]).join(' · ')
-      // Per-activity breakdown: which activity was ruled out, and why. Shown under
-      // the short cause so a director can see what each candidate ran into.
+      // Per-activity breakdown: every activity open to this group, listed under the one cause that
+      // ruled it out ("Weekly max reached: Archery, Drama"). Nothing is cut off: the director needs to
+      // find a particular activity. An activity no rule blocks is listed too, under its own heading.
       if (os.eligibleActs.length > 0) {
-        const lines = os.eligibleActs.map(a => {
+        const byCause = new Map() // heading -> names, in first-seen order
+        for (const a of os.eligibleActs) {
           const code = blockedBy(a, os.groupId, os.dayId, os.blockId)
-          return code ? `${a.name || a.id}: ${UNFILLABLE_TAGS[code]}` : null
-        }).filter(Boolean)
-        if (lines.length > 0) {
-          flags.UNFILLABLE_detail = lines.length > 4
-            ? [...lines.slice(0, 4), `${lines.length - 4} more`]
-            : lines
+          const heading = code ? UNFILLABLE_TAGS[code] : 'No rule blocks it'
+          if (!byCause.has(heading)) byCause.set(heading, [])
+          byCause.get(heading).push(a.name || a.id)
         }
+        flags.UNFILLABLE_detail = [...byCause].map(([heading, names]) => `${heading}: ${names.join(', ')}`)
       }
       // Slice 4b (§3): if every eligible activity was blocked by a place an
       // overlay (fixed event/elective offering/event) already occupies, name that

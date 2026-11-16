@@ -3,7 +3,7 @@ import { resolveFixedEventActivityIds } from './fixedEventActivityLink.js'
 import { resolveFixedEventGroupIds, resolveFixedEventDayIds } from './fixedEventScope.js'
 import { isActivityEligibleForGroup } from './eligibility.js'
 import { parseAllowedPeriods, isPeriodAllowed } from './allowedPeriods.js'
-import { repeatedPairs, pairKey, rotationRepeatFindings } from './rotation.js'
+import { repeatedPairs, pairKey, rotationRepeatFindings, seasonCounts } from './rotation.js'
 import { spreadRule, spreadKey, spreadFindings } from './spread.js'
 import { createDayLedger, removeOwnPlaceEntry } from './placementLedger.js'
 import { isFreeChoiceActivity } from './freeChoiceActivities.js'
@@ -287,6 +287,7 @@ const UNFILLABLE_TAGS = {
   period: 'Not a period for this activity',
   rotation: 'Had it last week',
   spread: 'Daily limit reached',
+  season: 'Done more often than other activities',
 }
 
 function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, matchSeed, locationCapById, locationNameById, electiveSetActivities, events, fixedEventsOnly = false, weekId = null, previousWeekUsage = [] }) {
@@ -587,7 +588,29 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
   // at the end so a cell nothing else can fill takes the repeat instead of staying empty.
   const repeatedLastWeek = repeatedPairs(activities, previousWeekUsage)
   let rotationStrict = repeatedLastWeek.size > 0
+  // Season fairness: how many earlier weeks each group has had each activity. Ties between candidates go
+  // to the one a group has had least, so across a summer every group sees the whole catalog before any
+  // repeats. Empty in the first week, where every candidate ties and nothing changes.
+  const seasonCountOf = seasonCounts(previousWeekUsage)
+  const seasonCount = (groupId, actId) => seasonCountOf.get(pairKey(groupId, actId)) || 0
+  // The fewest earlier weeks any activity open to a group has had. While placing, a group takes nothing
+  // it has had more often than that, so it works through the whole catalog before repeating; relaxed
+  // first once the strict pass is done, so a cell nothing newer can fill still gets an activity.
+  const seasonFloor = new Map()
+  let seasonStrict = seasonCountOf.size > 0
   const allowedPeriodsByActivity = new Map(activities.map(a => [a.id, parseAllowedPeriods(a.allowed_periods)]))
+  if (seasonStrict) {
+    for (const g of groups) {
+      let floor = Infinity
+      for (const a of activities) {
+        if (!eligibility.get(a.id)?.has(g.id)) continue
+        const cells = allowedPeriodsByActivity.get(a.id)?.get(g.tier_id)
+        if (cells && cells.size === 0) continue   // allowed in no period for this division: unreachable
+        floor = Math.min(floor, seasonCount(g.id, a.id))
+      }
+      seasonFloor.set(g.id, Number.isFinite(floor) ? floor : 0)
+    }
+  }
   // Daily spread (v100): at most `max` activities of one family per group per day. Strict while
   // placing; relaxed once at the end, before rotation, so a cell nothing else fills takes the extra one.
   const spreadRuleByActivity = new Map()
@@ -647,6 +670,7 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
     // never starts anywhere else for that division.
     if (!isPeriodAllowed(act, group, dayId, blockId, allowedPeriodsByActivity.get(act.id))) return 'period'
     if (rotationStrict && repeatedLastWeek.has(pairKey(groupId, act.id))) return 'rotation'
+    if (seasonStrict && seasonCount(groupId, act.id) > (seasonFloor.get(groupId) ?? 0)) return 'season'
     if (spreadStrict) {
       const sr = spreadRuleByActivity.get(act.id)
       if (sr && (spreadUsage.get(spreadKey(groupId, dayId, sr.key)) || 0) >= sr.max) return 'spread'
@@ -930,7 +954,8 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
         candidates.set(s.groupId, scarce
           .filter(a => s.eligibleActs.includes(a) && owed(a, s.groupId) > 0 && canPlace(a, s.groupId, s.dayId, s.blockId))
           .sort((x, y) => scoreForPrefer(x, s.groupId, s.dayId) - scoreForPrefer(y, s.groupId, s.dayId)
-            || urgency.get(y.id) - urgency.get(x.id) || tie.get(x.id) - tie.get(y.id)))
+            || urgency.get(y.id) - urgency.get(x.id)
+            || seasonCount(s.groupId, x.id) - seasonCount(s.groupId, y.id) || tie.get(x.id) - tie.get(y.id)))
       }
       const holders = new Map() // activity id -> group ids matched to it in this slot
       const roomOf = (a, s) => a.max_groups_per_slot - (activityUsage.get(`${a.id}|${s.dayId}|${s.blockId}`) || 0)
@@ -1001,6 +1026,8 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
       const deferred = candidates.filter(a => scoreForPrefer(a, slot.groupId, slot.dayId) !== 0)
       const ordered = [...normal, ...deferred]
       ordered.sort((a, b) => {
+        const season = seasonCount(slot.groupId, a.id) - seasonCount(slot.groupId, b.id)
+        if (season !== 0) return season
         const diff = getCount(slot.groupId, a.id) - getCount(slot.groupId, b.id)
         return diff !== 0 ? diff : rand() - 0.5
       })
@@ -1025,6 +1052,7 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
   const fits = s => s.eligibleActs
     .filter(a => canPlace(a, s.groupId, s.dayId, s.blockId))
     .sort((a, b) => (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1)
+      || seasonCount(s.groupId, a.id) - seasonCount(s.groupId, b.id)
       || getCount(s.groupId, a.id) - getCount(s.groupId, b.id))
 
   function tryFill(u, depth, locked) {
@@ -1336,6 +1364,13 @@ function scheduleCohort({ cohortEntry, days, replacedDays, activities, rand, mat
     repair()
     minRepair()
     fillRepair()
+    // Season order is the lightest preference: a cell nothing newer can fill takes a repeat first.
+    if (seasonStrict) {
+      seasonStrict = false
+      repair()
+      minRepair()
+      fillRepair()
+    }
     // Spread is a limit the engine keeps when it can: whatever is still empty may now take one more.
     if (spreadStrict) {
       spreadStrict = false

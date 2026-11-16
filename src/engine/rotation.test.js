@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rotates, previousWeek, previousWeekUsage, repeatedPairs, rotationRepeatFindings } from './rotation.js'
+import { rotates, previousWeek, previousWeekUsage, repeatedPairs, rotationRepeatFindings, seasonCounts } from './rotation.js'
 
 const weeks = [
   { id: 'w3', name: 'Week 3', sort_order: 2 },
@@ -46,7 +46,7 @@ describe('previousWeekUsage', () => {
   ]
   it('lists each group/activity pair that had the activity the week before, from either candidate', () => {
     expect(previousWeekUsage({ weeks, weekId: 'w3', templates, slots })).toEqual([
-      { groupId: 'g1', activityId: 'Boating' }, { groupId: 'g2', activityId: 'Boating' },
+      { groupId: 'g1', activityId: 'Boating', count: 1, lastWeek: true }, { groupId: 'g2', activityId: 'Boating', count: 1, lastWeek: true },
     ])
   })
   it('is empty for the first week', () => {
@@ -78,5 +78,39 @@ describe('repeatedPairs / rotationRepeatFindings', () => {
   it('reports nothing without last-week data, or when the repeat was not placed', () => {
     expect(rotationRepeatFindings({ slots: [{ group_id: 'g1', activity_id: 'Boating' }], groups, activities, usage: [] })).toEqual([])
     expect(rotationRepeatFindings({ slots: [{ group_id: 'g1', activity_id: 'Archery' }], groups, activities, usage })).toEqual([])
+  })
+})
+
+describe('season counts', () => {
+  const weeks3 = [{ id: 'w1', sort_order: 0 }, { id: 'w2', sort_order: 1 }, { id: 'w3', sort_order: 2 }, { id: 'w4', sort_order: 3 }]
+  const templates = [
+    { id: 't1', week_id: 'w1', kind: 'generated' }, { id: 't1m', week_id: 'w1', kind: 'manual' },
+    { id: 't2', week_id: 'w2', kind: 'generated' }, { id: 't3', week_id: 'w3', kind: 'generated' },
+  ]
+  const slots = [
+    { template_id: 't1', group_id: 'g1', activity_id: 'Boating' },
+    { template_id: 't1m', group_id: 'g1', activity_id: 'Boating' },   // same week, other candidate: still one week
+    { template_id: 't2', group_id: 'g1', activity_id: 'Boating' },
+    { template_id: 't1', group_id: 'g1', activity_id: 'Archery' },    // week 1 only: not last week
+    { template_id: 't3', group_id: 'g2', activity_id: 'Boating' },
+  ]
+  it('counts each earlier week once and marks last week', () => {
+    const usage = previousWeekUsage({ weeks: weeks3, weekId: 'w4', templates, slots })
+    const find = (g, a) => usage.find((u) => u.groupId === g && u.activityId === a)
+    expect(find('g1', 'Boating')).toMatchObject({ count: 2, lastWeek: false })
+    expect(find('g1', 'Archery')).toMatchObject({ count: 1, lastWeek: false })
+    expect(find('g2', 'Boating')).toMatchObject({ count: 1, lastWeek: true })
+  })
+  it('does not count the week being built or later ones', () => {
+    const usage = previousWeekUsage({ weeks: weeks3, weekId: 'w3', templates, slots })
+    expect(usage.find((u) => u.groupId === 'g2')).toBeUndefined()
+    expect(usage.find((u) => u.activityId === 'Boating' && u.groupId === 'g1')).toMatchObject({ count: 2, lastWeek: true })
+  })
+  it('rotation only sees pairs that were last week; counts feed seasonCounts', () => {
+    const usage = [{ groupId: 'g1', activityId: 'Boating', count: 2, lastWeek: false }, { groupId: 'g2', activityId: 'Boating', count: 1, lastWeek: true }]
+    expect([...repeatedPairs([{ id: 'Boating', rotate_every_weeks: 2 }], usage)]).toEqual(['g2|Boating'])
+    expect(seasonCounts(usage).get('g1|Boating')).toBe(2)
+    expect(seasonCounts([{ groupId: 'g3', activityId: 'X' }]).get('g3|X')).toBe(1)   // older callers: one earlier week
+    expect(seasonCounts(undefined).size).toBe(0)
   })
 })

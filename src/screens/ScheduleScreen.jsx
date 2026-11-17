@@ -15,6 +15,8 @@ import ErrorBanner from '../components/schedule/ErrorBanner'
 import GenerationBlockedNotice from '../components/schedule/GenerationBlockedNotice'
 import { legendEntriesFor, FLAG_SEVERITY, setActivityPalette } from '../components/schedule/slotCellConstants'
 import FindingsRail from '../components/schedule/FindingsRail'
+import FairnessPanel from '../components/schedule/FairnessPanel'
+import { suggestSwaps } from '../engine/suggestions'
 import { highlightMapForKind, railEmptyText } from './schedule/findingHighlight'
 import ConfirmRegenModal from '../components/schedule/ConfirmRegenModal'
 import ExportChooserModal from '../components/schedule/ExportChooserModal'
@@ -231,6 +233,8 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
   // The one cell a clicked problem row points at: lit on the grid, scrolled to,
   // and cleared after a few seconds (or the next click). { slotId, cellKey, reason }
   const [locatedCell, setLocatedCell] = useState(null)
+  // Season fairness report: counts across every week built so far.
+  const [showFairness, setShowFairness] = useState(false)
   const [pickedDay, setSelectedDay] = useState(null)
   // Group and Daily View always show one: an unset or stale pick falls to the first.
   const selectedGroup = resolveSelection(pickedGroup, groups)
@@ -791,6 +795,40 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
       : null)
   }
 
+  // Swap suggestions for a stuck cell (src/engine/suggestions.js), and applying one: the other group's
+  // cell changes first, then the stuck cell takes the blocked activity once that change has landed (so
+  // the place no longer reads as full when the second placement checks it).
+  const pendingSwap = useRef(null)
+  function getSuggestionsForRow(row) {
+    const slot = slots.find(x => x.id === row.slotIds?.[0])
+    if (!slot) return []
+    return suggestSwaps({
+      slots, groups, activities, locations, timeBlocks, electiveSetActivities,
+      cell: { groupId: slot.group_id, dayId: slot.day_id, blockId: slot.time_block_id },
+    })
+  }
+  function applySuggestion(row, sg) {
+    const slot = slots.find(x => x.id === row.slotIds?.[0])
+    if (!slot) return
+    pendingSwap.current = {
+      groupId: slot.group_id, dayId: slot.day_id, blockId: slot.time_block_id, activityId: sg.targetActivityId,
+      movedSlotId: sg.slotId, movedActivityId: sg.toActivityId, at: Date.now(),
+    }
+    setRailView(null)
+    setLocatedCell({ slotId: slot.id, cellKey: `${slot.group_id}|${slot.day_id}|${slot.time_block_id}`, reason: sg.text })
+    handleCellPlace({ group_id: sg.groupId, day_id: slot.day_id, time_block_id: slot.time_block_id }, sg.toActivityId)
+  }
+  useEffect(() => {
+    const p = pendingSwap.current
+    if (!p) return
+    if (Date.now() - p.at > 8000) { pendingSwap.current = null; return }
+    if (slots.find(x => x.id === p.movedSlotId)?.activity_id !== p.movedActivityId) return
+    pendingSwap.current = null
+    handleCellPlace({ group_id: p.groupId, day_id: p.dayId, time_block_id: p.blockId }, p.activityId)
+  // handleCellPlace is a per-render closure over the slots this effect just observed.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slots])
+
   useEffect(() => {
     if (!locatedCell) return undefined
     const scroll = setTimeout(() => {
@@ -1340,11 +1378,21 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
                     }}
                   >{railView === 'ALL' ? 'Hide list' : 'Review all'}</button>
                 )}
+                <button
+                  onClick={() => setShowFairness(true)}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px',
+                    fontFamily: 'inherit', fontSize: 12, color: 'var(--text-secondary)',
+                    textDecoration: 'underline', textUnderlineOffset: 3,
+                  }}
+                >Season fairness</button>
                 {findingsRailOpen && (
                   <FindingsRail
                     rows={railRows}
                     onDismiss={dismissFindingsRow}
                     onLocate={locateFindingsRow}
+                    getSuggestions={!isManual ? getSuggestionsForRow : undefined}
+                    onApplySuggestion={applySuggestion}
                     onClose={() => setRailView(null)}
                     intro={{ title: 'Still to place' }}
                     emptyText={railEmptyText(stats)}
@@ -1663,6 +1711,16 @@ export default function ScheduleScreen({ campId, role, onNavigate, initialRoute,
             weeksHook.confirmDeleteWeek(deletedWeekId)
           }}
           onCancel={() => setDeletingWeek(null)}
+        />
+      )}
+      {showFairness && (
+        <FairnessPanel
+          repo={repo}
+          weeks={weeks}
+          groups={groups}
+          tiers={tiers}
+          activities={activities}
+          onClose={() => setShowFairness(false)}
         />
       )}
     </div>

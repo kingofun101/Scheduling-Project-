@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { S, useEnterTransition } from '../../styles/shared'
 import { SEVERITY_BAR_COLOR } from './slotCellConstants'
 
@@ -7,8 +8,10 @@ import { SEVERITY_BAR_COLOR } from './slotCellConstants'
 // UNFILLABLE cell icon for accessibility).
 // docs/superpowers/specs/2026-07-28-schedule-grid-decolorization-design.md
 // §"Reasons surface — Findings & Flags rail"
-export default function FindingsRail({ rows, onDismiss, onLocate, onClose, intro, emptyText }) {
+export default function FindingsRail({ rows, onDismiss, onLocate, onClose, intro, emptyText, getSuggestions, onApplySuggestion }) {
   const enter = useEnterTransition('popFade', { transformOrigin: 'top left' })
+  // Swap suggestions for one stuck cell at a time: { key, list }.
+  const [open, setOpen] = useState(null)
 
   return (
     <div
@@ -40,6 +43,31 @@ export default function FindingsRail({ rows, onDismiss, onLocate, onClose, intro
                 {row.reason}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{row.locator}</div>
+              {getSuggestions && row.kind === 'UNFILLABLE' && (
+                <div style={{ marginTop: 4 }}>
+                  <button
+                    onClick={() => setOpen(open?.key === row.key ? null : { key: row.key, list: getSuggestions(row) })}
+                    style={{ fontSize: 11, fontWeight: 600, color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', textDecoration: 'underline' }}
+                  >{open?.key === row.key ? 'Hide swaps' : 'Suggest swaps'}</button>
+                  {open?.key === row.key && (
+                    open.list.length === 0
+                      ? <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>No single swap frees this cell.</div>
+                      : (
+                        <ul style={{ listStyle: 'none', margin: '4px 0 0', padding: 0 }}>
+                          {open.list.map((sg) => (
+                            <li key={`${sg.targetActivityId}|${sg.slotId}|${sg.toActivityId}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, marginBottom: 4 }}>
+                              <span style={{ flex: 1, minWidth: 0 }}>{sg.text}</span>
+                              <button
+                                onClick={() => { setOpen(null); onApplySuggestion?.(row, sg) }}
+                                style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', background: 'none', border: '1px solid var(--border)', borderRadius: 5, cursor: 'pointer', padding: '2px 8px', fontFamily: 'inherit', flexShrink: 0 }}
+                              >Apply</button>
+                            </li>
+                          ))}
+                        </ul>
+                      )
+                  )}
+                </div>
+              )}
               {Array.isArray(row.detail) && row.detail.length > 0 && (
                 <ul style={{ margin: '4px 0 0', padding: '0 0 0 16px', fontSize: 11, color: 'var(--text-secondary)' }}>
                   {row.detail.map(line => <li key={line}>{line}</li>)}
